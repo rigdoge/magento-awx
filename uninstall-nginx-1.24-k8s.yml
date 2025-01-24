@@ -6,7 +6,7 @@
     - name: 获取当前 Nginx 状态
       shell: |
         echo "=== 当前 Nginx 资源 ==="
-        kubectl get all -l app=nginx
+        k3s kubectl get all -l app=nginx
       environment:
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       register: nginx_status
@@ -17,7 +17,7 @@
         msg: "{{ nginx_status.stdout_lines | default([]) }}"
 
     - name: 删除 Nginx 资源
-      shell: kubectl delete -f /tmp/nginx.yaml
+      shell: k3s kubectl delete -f /tmp/nginx.yaml
       environment:
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       register: uninstall_result
@@ -26,7 +26,7 @@
     - name: 确认删除结果
       shell: |
         echo "=== 检查剩余资源 ==="
-        kubectl get all -l app=nginx
+        k3s kubectl get all -l app=nginx
       environment:
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       register: check_result
