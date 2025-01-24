@@ -73,13 +73,13 @@
 
     - name: 部署 Nginx
       shell: |
-        kubectl apply -f /tmp/nginx-deployment.yml
+        k3s kubectl apply -f /tmp/nginx-deployment.yml
       register: deploy_result
 
     - name: 等待 Nginx Pod 就绪
       shell: |
         for i in {1..30}; do
-          if kubectl get pods | grep nginx-deployment | grep Running; then
+          if k3s kubectl get pods | grep nginx-deployment | grep Running; then
             echo "Nginx Pod 已就绪"
             exit 0
           fi
@@ -94,16 +94,16 @@
     - name: 获取 Nginx 访问信息
       shell: |
         echo "=== Nginx Pod 状态 ==="
-        kubectl get pods | grep nginx
+        k3s kubectl get pods | grep nginx
         
         echo -e "\n=== Nginx Service 状态 ==="
-        kubectl get svc nginx-service
+        k3s kubectl get svc nginx-service
         
         echo -e "\n=== Nginx Ingress 状态 ==="
-        kubectl get ingress nginx-ingress
+        k3s kubectl get ingress nginx-ingress
         
         echo -e "\n=== Nginx 访问地址 ==="
-        NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+        NODE_IP=$(k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
         echo "http://$NODE_IP"
       register: nginx_status
       ignore_errors: yes
