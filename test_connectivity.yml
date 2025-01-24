@@ -1,0 +1,36 @@
+---
+- name: Test target host connectivity and gather system information
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Ping target host
+      ping:
+
+    - name: Get system information
+      debug:
+        msg: |
+          Operating System: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Architecture: {{ ansible_architecture }}
+          Total Memory: {{ ansible_memtotal_mb }}MB
+          CPU Cores: {{ ansible_processor_cores }}
+
+    - name: Check if port 80 is available
+      wait_for:
+        port: 80
+        state: stopped
+        timeout: 5
+      ignore_errors: yes
+      register: port_check
+
+    - name: Display port 80 status
+      debug:
+        msg: "Port 80 is {% if port_check.failed %}not {% endif %}available for Nginx"
+
+    - name: Check disk space
+      shell: df -h /
+      register: disk_space
+      changed_when: false
+
+    - name: Display disk space information
+      debug:
+        var: disk_space.stdout_lines
