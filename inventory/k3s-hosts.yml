@@ -1,0 +1,13 @@
+---
+all:
+  children:
+    k3s:
+      hosts:
+        k3s-master:
+          ansible_host: 你的服务器IP  # 需要替换为实际的 IP
+          ansible_user: ubuntu
+          ansible_python_interpreter: /usr/bin/python3
+      vars:
+        ansible_connection: ssh
+        ansible_become: yes
+        ansible_become_method: sudo 
