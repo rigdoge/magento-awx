@@ -2,11 +2,14 @@
 - name: 安装 OpenSearch 2.12.0
   hosts: all
   gather_facts: no
+  vars:
+    default_namespace: default
+    default_nodeport: "30920"
   tasks:
     - name: 设置变量
       set_fact:
-        use_namespace: "{{ namespace | default('default') }}"
-        use_nodeport: "{{ nodeport | default('30920') }}"
+        use_namespace: "{{ namespace if namespace is defined else default_namespace }}"
+        use_nodeport: "{{ nodeport if nodeport is defined else default_nodeport }}"
 
     - name: 创建 OpenSearch 配置
       copy:
