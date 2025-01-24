@@ -1,0 +1,26 @@
+---
+- name: 检查端口和服务状态
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 检查系统状态
+      shell: |
+        echo "=== 检查所有命名空间中使用 NodePort 30306 的服务 ==="
+        /usr/local/bin/k3s kubectl get svc --all-namespaces -o wide | grep "30306"
+        
+        echo -e "\n=== 检查所有命名空间中的 Percona 服务 ==="
+        /usr/local/bin/k3s kubectl get svc --all-namespaces -o wide | grep -i "percona"
+        
+        echo -e "\n=== 检查所有命名空间中的 Percona Pods ==="
+        /usr/local/bin/k3s kubectl get pods --all-namespaces -o wide | grep -i "percona"
+        
+        echo -e "\n=== 检查 K3s 服务详细信息 ==="
+        for ns in $(/usr/local/bin/k3s kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
+          echo -e "\n命名空间: $ns"
+          /usr/local/bin/k3s kubectl get svc -n $ns -o json | grep -A 5 "nodePort"
+        done
+      register: check_result
+
+    - name: 显示检查结果
+      debug:
+        msg: "{{ check_result.stdout_lines | default([]) }}" 
