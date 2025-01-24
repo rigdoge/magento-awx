@@ -2,26 +2,12 @@
 - name: 从 K3s 中卸载 Nginx 1.24
   hosts: all
   gather_facts: no
+  become: yes
   tasks:
-    - name: 复制 kubeconfig 到容器
-      shell: |
-        mkdir -p ~/.kube
-        cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-      ignore_errors: yes
-
-    - name: 安装 kubectl
-      shell: |
-        if ! command -v kubectl &> /dev/null; then
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          mv kubectl /usr/local/bin/
-        fi
-      ignore_errors: yes
-
     - name: 获取当前 Nginx 状态
       shell: |
         echo "=== 当前 Nginx 资源 ==="
-        KUBECONFIG=~/.kube/config kubectl get all,ingress -l app=nginx
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get all,ingress -l app=nginx
       register: nginx_status
       ignore_errors: yes
 
@@ -31,16 +17,16 @@
 
     - name: 删除 Nginx 资源
       shell: |
-        KUBECONFIG=~/.kube/config kubectl delete ingress nginx-ingress
-        KUBECONFIG=~/.kube/config kubectl delete service nginx-service
-        KUBECONFIG=~/.kube/config kubectl delete deployment nginx-deployment
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml delete ingress nginx-ingress
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml delete service nginx-service
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml delete deployment nginx-deployment
       register: uninstall_result
       ignore_errors: yes
 
     - name: 确认删除结果
       shell: |
         echo "=== 检查剩余资源 ==="
-        KUBECONFIG=~/.kube/config kubectl get all,ingress -l app=nginx
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get all,ingress -l app=nginx
       register: check_result
       ignore_errors: yes
 
