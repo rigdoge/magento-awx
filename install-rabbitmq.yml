@@ -5,6 +5,7 @@
   vars:
     use_namespace: "{{ namespace | default('default') }}"
     use_nodeport: "{{ nodeport | default(30672) }}"
+    management_nodeport: "{{ use_nodeport | int + 1 }}"
 
   tasks:
     - name: 创建 RabbitMQ 配置
@@ -60,7 +61,7 @@
               name: amqp
             - port: 15672
               targetPort: 15672
-              nodePort: {{ use_nodeport + 1 }}
+              nodePort: {{ management_nodeport }}
               name: management
             selector:
               app: rabbitmq
@@ -99,7 +100,7 @@
               NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
               echo -e "\n=== 访问信息 ==="
               echo "AMQP 端口: $NODE_IP:{{ use_nodeport }}"
-              echo "管理界面: http://$NODE_IP:{{ use_nodeport + 1 }}"
+              echo "管理界面: http://$NODE_IP:{{ management_nodeport }}"
               echo "默认用户名/密码: guest/guest"
               exit 0
             fi
