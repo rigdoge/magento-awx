@@ -3,10 +3,25 @@
   hosts: all
   gather_facts: no
   tasks:
+    - name: 复制 kubeconfig 到容器
+      shell: |
+        mkdir -p ~/.kube
+        cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+      ignore_errors: yes
+
+    - name: 安装 kubectl
+      shell: |
+        if ! command -v kubectl &> /dev/null; then
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          mv kubectl /usr/local/bin/
+        fi
+      ignore_errors: yes
+
     - name: 获取当前 Nginx 状态
       shell: |
         echo "=== 当前 Nginx 资源 ==="
-        /usr/local/bin/k3s kubectl get all,ingress -l app=nginx
+        KUBECONFIG=~/.kube/config kubectl get all,ingress -l app=nginx
       register: nginx_status
       ignore_errors: yes
 
@@ -16,16 +31,16 @@
 
     - name: 删除 Nginx 资源
       shell: |
-        /usr/local/bin/k3s kubectl delete ingress nginx-ingress
-        /usr/local/bin/k3s kubectl delete service nginx-service
-        /usr/local/bin/k3s kubectl delete deployment nginx-deployment
+        KUBECONFIG=~/.kube/config kubectl delete ingress nginx-ingress
+        KUBECONFIG=~/.kube/config kubectl delete service nginx-service
+        KUBECONFIG=~/.kube/config kubectl delete deployment nginx-deployment
       register: uninstall_result
       ignore_errors: yes
 
     - name: 确认删除结果
       shell: |
         echo "=== 检查剩余资源 ==="
-        /usr/local/bin/k3s kubectl get all,ingress -l app=nginx
+        KUBECONFIG=~/.kube/config kubectl get all,ingress -l app=nginx
       register: check_result
       ignore_errors: yes
 
