@@ -6,6 +6,14 @@
     use_namespace: "{{ namespace | default('default') }}"
     use_nodeport: "{{ nodeport | default('30672') }}"
   tasks:
+    - name: 创建命名空间
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          echo "=== 创建命名空间 {{ use_namespace }} ==="
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+      register: namespace_result
+
     - name: 创建 RabbitMQ 配置
       copy:
         dest: /tmp/rabbitmq.yaml
@@ -147,6 +155,7 @@
     - name: 显示部署结果
       debug:
         msg: 
+          - "{{ namespace_result.stdout_lines | default([]) }}"
           - "{{ apply_result.stdout_lines | default([]) }}"
           - "{{ pod_creation_result.stdout_lines | default([]) }}"
           - "{{ pod_ready_result.stdout_lines | default([]) }}"
