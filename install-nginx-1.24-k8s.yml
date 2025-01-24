@@ -1,0 +1,165 @@
+---
+- name: Deploy Nginx 1.24 to Kubernetes
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Create Nginx namespace
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: nginx-system
+
+    - name: Create Nginx ConfigMap
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: nginx-config
+            namespace: nginx-system
+          data:
+            nginx.conf: |
+              user nginx;
+              worker_processes auto;
+              error_log /var/log/nginx/error.log notice;
+              pid /var/run/nginx.pid;
+
+              events {
+                  worker_connections 1024;
+              }
+
+              http {
+                  include /etc/nginx/mime.types;
+                  default_type application/octet-stream;
+                  sendfile on;
+                  keepalive_timeout 65;
+                  server_tokens off;
+
+                  # 启用 HTTPS
+                  server {
+                      listen 443 ssl;
+                      server_name localhost;
+                      
+                      ssl_protocols TLSv1.2 TLSv1.3;
+                      ssl_ciphers HIGH:!aNULL:!MD5;
+                      ssl_prefer_server_ciphers on;
+                      ssl_certificate /etc/nginx/ssl/tls.crt;
+                      ssl_certificate_key /etc/nginx/ssl/tls.key;
+
+                      location / {
+                          root /usr/share/nginx/html;
+                          index index.html;
+                      }
+                  }
+
+                  # HTTP 重定向到 HTTPS
+                  server {
+                      listen 80;
+                      server_name localhost;
+                      return 301 https://$host$request_uri;
+                  }
+              }
+
+    - name: Deploy Nginx
+      k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: nginx
+            namespace: nginx-system
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: nginx
+            template:
+              metadata:
+                labels:
+                  app: nginx
+              spec:
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 101
+                  runAsGroup: 101
+                containers:
+                - name: nginx
+                  image: nginx:1.24
+                  ports:
+                  - containerPort: 80
+                  - containerPort: 443
+                  resources:
+                    requests:
+                      cpu: "100m"
+                      memory: "128Mi"
+                    limits:
+                      cpu: "200m"
+                      memory: "256Mi"
+                  livenessProbe:
+                    httpGet:
+                      path: /
+                      port: 80
+                      scheme: HTTP
+                    initialDelaySeconds: 10
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+                    failureThreshold: 3
+                  readinessProbe:
+                    httpGet:
+                      path: /
+                      port: 80
+                      scheme: HTTP
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 3
+                  startupProbe:
+                    httpGet:
+                      path: /
+                      port: 80
+                      scheme: HTTP
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+                    failureThreshold: 30
+                  volumeMounts:
+                  - name: nginx-config
+                    mountPath: /etc/nginx/nginx.conf
+                    subPath: nginx.conf
+                  - name: nginx-ssl
+                    mountPath: /etc/nginx/ssl
+                    readOnly: true
+                volumes:
+                - name: nginx-config
+                  configMap:
+                    name: nginx-config
+                - name: nginx-ssl
+                  secret:
+                    secretName: nginx-ssl
+
+    - name: Create Nginx Service
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: nginx
+            namespace: nginx-system
+          spec:
+            type: NodePort
+            ports:
+            - port: 443
+              targetPort: 443
+              protocol: TCP
+              name: https
+            - port: 80
+              targetPort: 80
+              protocol: TCP
+              name: http
+            selector:
+              app: nginx

@@ -1,0 +1,53 @@
+---
+- name: Uninstall Nginx 1.24 from Kubernetes
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Remove Nginx Service
+      k8s:
+        state: absent
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: nginx
+            namespace: nginx-system
+
+    - name: Remove Nginx Deployment
+      k8s:
+        state: absent
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: nginx
+            namespace: nginx-system
+
+    - name: Remove Nginx ConfigMap
+      k8s:
+        state: absent
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: nginx-config
+            namespace: nginx-system
+
+    - name: Remove Nginx SSL Secret
+      k8s:
+        state: absent
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: nginx-ssl
+            namespace: nginx-system
+
+    - name: Remove Nginx namespace
+      k8s:
+        state: absent
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: nginx-system
