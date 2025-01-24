@@ -5,26 +5,24 @@
   tasks:
     - name: 检查基本连接
       shell: |
-        echo "=== SSH 连接用户 ==="
-        whoami
+        echo "=== 用户信息 ==="
         id
-        
-        echo -e "\n=== 系统信息 ==="
-        uname -a
-        
-        echo -e "\n=== 当前目录 ==="
-        pwd
-        
-        echo -e "\n=== 环境变量 ==="
+        whoami
+        echo "当前目录: $(pwd)"
         env | grep -i user
         
-        echo -e "\n=== 测试 K3s 命令 ==="
-        /usr/local/bin/k3s kubectl get nodes || echo "无法执行 K3s 命令"
-      register: system_info
+        echo -e "\n=== K3s 文件权限 ==="
+        ls -l /usr/local/bin/k3s
+        ls -l /etc/rancher/k3s/k3s.yaml || echo "k3s.yaml 不存在"
+        
+        echo -e "\n=== K3s 状态 ==="
+        /usr/local/bin/k3s kubectl get node
+        /usr/local/bin/k3s kubectl get pods -A
+      register: connection_info
 
-    - name: 显示系统信息
+    - name: 显示连接信息
       debug:
-        msg: "{{ system_info.stdout_lines | default([]) }}"
+        msg: "{{ connection_info.stdout_lines | default([]) }}"
 
     - name: 检查 K3s 状态
       shell: |
