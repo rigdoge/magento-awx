@@ -2,7 +2,15 @@
 - name: 安装 RabbitMQ 3.13
   hosts: all
   gather_facts: no
+  vars:
+    default_namespace: default
+    default_nodeport: "30672"
   tasks:
+    - name: 设置变量
+      set_fact:
+        use_namespace: "{{ namespace | default(default_namespace) }}"
+        use_nodeport: "{{ nodeport | default(default_nodeport) }}"
+
     - name: 创建 RabbitMQ 配置
       copy:
         dest: /tmp/rabbitmq.yaml
@@ -11,7 +19,9 @@
           kind: Deployment
           metadata:
             name: rabbitmq
-            namespace: "{{ namespace }}"
+            namespace: {{ use_namespace }}
+            labels:
+              app: rabbitmq
           spec:
             replicas: 1
             selector:
@@ -25,42 +35,52 @@
                 containers:
                 - name: rabbitmq
                   image: rabbitmq:3.13-management
-                  resources:
-                    limits:
-                      cpu: "1"
-                      memory: "1Gi"
-                    requests:
-                      cpu: "500m"
-                      memory: "512Mi"
                   ports:
                   - containerPort: 5672
                     name: amqp
                   - containerPort: 15672
                     name: management
+                  resources:
+                    requests:
+                      memory: "512Mi"
+                      cpu: "500m"
+                    limits:
+                      memory: "1Gi"
+                      cpu: "1000m"
                   readinessProbe:
                     tcpSocket:
                       port: 5672
-                    initialDelaySeconds: 10
-                    periodSeconds: 30
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                  volumeMounts:
+                  - name: rabbitmq-data
+                    mountPath: /var/lib/rabbitmq
+                volumes:
+                - name: rabbitmq-data
+                  hostPath:
+                    path: /data/rabbitmq
+                    type: DirectoryOrCreate
           ---
           apiVersion: v1
           kind: Service
           metadata:
             name: rabbitmq
-            namespace: "{{ namespace }}"
-          spec:
-            selector:
+            namespace: {{ use_namespace }}
+            labels:
               app: rabbitmq
+          spec:
+            type: NodePort
             ports:
             - port: 5672
               targetPort: 5672
-              nodePort: 30672
+              nodePort: {{ use_nodeport }}
               name: amqp
             - port: 15672
               targetPort: 15672
-              nodePort: 31672
+              nodePort: {{ use_nodeport | int + 1 }}
               name: management
-            type: NodePort
+            selector:
+              app: rabbitmq
 
     - name: 清理旧的部署
       shell: |
@@ -71,38 +91,30 @@
     - name: 部署 RabbitMQ
       shell: |
         /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
-      register: deploy_result
-
-    - name: 等待 RabbitMQ Pod 就绪
-      shell: |
-        for i in {1..30}; do
-          if /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
+        
+        echo "等待 RabbitMQ Pod 就绪..."
+        for i in {1..60}; do
+          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
             echo "RabbitMQ Pod 已就绪"
             break
           fi
-          echo "等待 RabbitMQ Pod 就绪... $i"
-          sleep 3
+          echo "等待中... $i"
+          sleep 5
         done
-      register: wait_result
-
-    - name: 显示 RabbitMQ 状态
-      shell: |
-        echo "=== RabbitMQ Pod 状态 ==="
-        /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=rabbitmq
         
-        echo -e "\n=== RabbitMQ 服务状态 ==="
-        /usr/local/bin/k3s kubectl get svc -n {{ namespace }} -l app=rabbitmq
+        echo -e "\n=== RabbitMQ 部署状态 ==="
+        echo "Pod 状态:"
+        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq
+        echo -e "\nService 状态:"
+        /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=rabbitmq
         
-        echo -e "\n=== RabbitMQ 访问地址 ==="
+        echo -e "\n=== 访问地址 ==="
         NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
-        echo "AMQP: amqp://$NODE_IP:30672"
-        echo "管理界面: http://$NODE_IP:31672"
+        echo "AMQP 地址: amqp://$NODE_IP:{{ use_nodeport }}"
+        echo "管理界面: http://$NODE_IP:{{ use_nodeport | int + 1 }}"
         echo "默认用户名/密码: guest/guest"
-      register: status_result
+      register: deploy_result
 
     - name: 显示部署结果
       debug:
-        msg: 
-          - "{{ deploy_result.stdout_lines | default([]) }}"
-          - "{{ wait_result.stdout_lines | default([]) }}"
-          - "{{ status_result.stdout_lines | default([]) }}" 
+        msg: "{{ deploy_result.stdout_lines }}" 
