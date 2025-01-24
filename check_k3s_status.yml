@@ -1,0 +1,39 @@
+---
+- name: 检查 K3s 状态
+  hosts: all
+  tasks:
+    - name: 检查 K3s 服务状态
+      shell: |
+        echo "=== K3s 服务状态 ==="
+        systemctl status k3s || true
+        
+        echo "=== K3s 日志 ==="
+        journalctl -u k3s --no-pager -n 50 || true
+        
+        echo "=== 节点状态 ==="
+        kubectl get nodes -o wide || true
+        
+        echo "=== Pod 状态 ==="
+        kubectl get pods -A || true
+        
+        echo "=== 系统资源 ==="
+        free -h
+        df -h /var/lib/rancher/k3s
+      register: k3s_status
+      changed_when: false
+
+    - name: 显示 K3s 状态
+      debug:
+        msg: "{{ k3s_status.stdout_lines }}"
+
+    - name: 检查 K3s 配置
+      shell: |
+        echo "=== K3s 配置 ==="
+        cat /etc/rancher/k3s/config.yaml || true
+      register: k3s_config
+      changed_when: false
+      ignore_errors: yes
+
+    - name: 显示 K3s 配置
+      debug:
+        msg: "{{ k3s_config.stdout_lines }}" 
