@@ -3,6 +3,13 @@
   hosts: all
   gather_facts: no
   tasks:
+    - name: 清理旧的 Nginx 部署
+      shell: |
+        echo "=== 清理旧部署 ==="
+        /usr/local/bin/k3s kubectl delete -f /tmp/nginx.yaml || true
+        sleep 5
+      ignore_errors: yes
+
     - name: 创建 Nginx 配置
       copy:
         content: |
@@ -44,7 +51,7 @@
             ports:
             - port: 80
               targetPort: 80
-              nodePort: 30080
+              nodePort: 30180
             selector:
               app: nginx
         dest: /tmp/nginx.yaml
@@ -79,7 +86,7 @@
         
         echo -e "\n=== Nginx 访问地址 ==="
         NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
-        echo "http://$NODE_IP:30080"
+        echo "http://$NODE_IP:30180"
       register: nginx_info
 
     - name: 显示 Nginx 信息
