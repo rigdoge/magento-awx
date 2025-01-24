@@ -1,0 +1,24 @@
+---
+- name: 检查 Nginx 版本
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 获取 Nginx Pod 名称
+      shell: /usr/local/bin/k3s kubectl get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}'
+      register: pod_name
+
+    - name: 检查 Nginx 版本
+      shell: |
+        echo "=== Nginx Pod 信息 ==="
+        /usr/local/bin/k3s kubectl get pod {{ pod_name.stdout }} -o wide
+        
+        echo -e "\n=== Nginx 版本信息 ==="
+        /usr/local/bin/k3s kubectl exec {{ pod_name.stdout }} -- nginx -v
+        
+        echo -e "\n=== Nginx 配置信息 ==="
+        /usr/local/bin/k3s kubectl exec {{ pod_name.stdout }} -- nginx -T | head -n 5
+      register: nginx_info
+
+    - name: 显示 Nginx 信息
+      debug:
+        msg: "{{ nginx_info.stdout_lines | default([]) }}" 
