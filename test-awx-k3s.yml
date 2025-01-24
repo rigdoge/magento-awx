@@ -9,16 +9,17 @@
         uname -a
         
         echo -e "\n=== K3s 版本 ==="
-        k3s --version
+        /usr/local/bin/k3s --version
         
         echo -e "\n=== K3s 节点 ==="
-        kubectl get nodes
+        /usr/local/bin/k3s kubectl get nodes
         
         echo -e "\n=== K3s 系统 Pod ==="
-        kubectl get pods -n kube-system
+        /usr/local/bin/k3s kubectl get pods -n kube-system
       register: system_info
       environment:
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      become: yes
 
     - name: 显示系统信息
       debug:
