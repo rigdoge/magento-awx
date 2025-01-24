@@ -1,0 +1,22 @@
+---
+- name: 修复 K3s 权限给 Ubuntu 用户
+  hosts: all
+  gather_facts: no
+  become: yes
+  tasks:
+    - name: 修改 k3s.yaml 权限
+      shell: |
+        echo "=== 修改前的权限 ==="
+        ls -l /etc/rancher/k3s/k3s.yaml
+        
+        echo -e "\n=== 修改权限 ==="
+        chown ubuntu:ubuntu /etc/rancher/k3s/k3s.yaml
+        chmod 644 /etc/rancher/k3s/k3s.yaml
+        
+        echo -e "\n=== 修改后的权限 ==="
+        ls -l /etc/rancher/k3s/k3s.yaml
+      register: permission_info
+
+    - name: 显示权限修改信息
+      debug:
+        msg: "{{ permission_info.stdout_lines | default([]) }}" 
