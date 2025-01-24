@@ -3,6 +3,11 @@
   hosts: all
   gather_facts: no
   tasks:
+    - name: 创建命名空间
+      shell: |
+        /usr/local/bin/k3s kubectl create namespace {{ namespace }} || true
+      register: namespace_result
+
     - name: 创建 Percona 配置
       copy:
         dest: /tmp/percona.yaml
