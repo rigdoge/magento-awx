@@ -5,17 +5,22 @@
   tasks:
     - name: 删除 Percona 服务
       shell: |
-        echo "=== 删除 Percona ==="
-        # 强制删除所有相关资源
-        /usr/local/bin/k3s kubectl delete deployment,svc,pvc,pv -l app=percona -n magento --force --grace-period=0 || true
+        echo "=== 删除所有命名空间中的 Percona 资源 ==="
+        for ns in $(/usr/local/bin/k3s kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
+          echo "检查命名空间: $ns"
+          /usr/local/bin/k3s kubectl delete deployment,svc,pvc,pv -l app=percona -n $ns --force --grace-period=0 || true
+        done
+        
+        echo -e "\n=== 检查端口占用 ==="
+        /usr/local/bin/k3s kubectl get svc --all-namespaces | grep "30306" || echo "没有服务使用 30306 端口"
         
         echo -e "\n=== 等待资源终止 ==="
         for i in {1..10}; do
-          if ! /usr/local/bin/k3s kubectl get pods,svc -n magento -l app=percona 2>/dev/null | grep -q .; then
-            echo "所有 Percona 资源已终止"
+          if ! /usr/local/bin/k3s kubectl get pods --all-namespaces -l app=percona 2>/dev/null | grep -q .; then
+            echo "所有 Percona Pod 已终止"
             break
           fi
-          echo "等待资源终止... $i"
+          echo "等待 Pod 终止... $i"
           sleep 3
         done
 
@@ -23,12 +28,8 @@
         rm -rf /data/percona || true
         
         echo -e "\n=== 验证清理结果 ==="
-        echo "检查 Pods:"
-        /usr/local/bin/k3s kubectl get pods -n magento -l app=percona
-        echo "检查 Services:"
-        /usr/local/bin/k3s kubectl get svc -n magento -l app=percona
-        echo "检查 PVCs:"
-        /usr/local/bin/k3s kubectl get pvc -n magento -l app=percona
+        echo "检查所有命名空间中的 Percona 资源:"
+        /usr/local/bin/k3s kubectl get all --all-namespaces -l app=percona
       register: uninstall_result
 
     - name: 显示卸载结果
