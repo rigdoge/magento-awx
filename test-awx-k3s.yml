@@ -1,0 +1,25 @@
+---
+- name: 测试 AWX 和 K3s 连接
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 获取系统信息
+      shell: |
+        echo "=== 系统信息 ==="
+        uname -a
+        
+        echo -e "\n=== K3s 版本 ==="
+        k3s --version
+        
+        echo -e "\n=== K3s 节点 ==="
+        kubectl get nodes
+        
+        echo -e "\n=== K3s 系统 Pod ==="
+        kubectl get pods -n kube-system
+      register: system_info
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: 显示系统信息
+      debug:
+        msg: "{{ system_info.stdout_lines | default([]) }}" 
