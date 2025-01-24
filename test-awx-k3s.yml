@@ -3,24 +3,27 @@
   hosts: all
   gather_facts: no
   tasks:
-    - name: 获取系统信息
+    - name: 检查 SSH 连接和用户权限
       shell: |
-        echo "=== 系统信息 ==="
+        echo "=== SSH 连接用户 ==="
+        whoami
+        echo "当前用户: $USER"
+        
+        echo -e "\n=== 系统信息 ==="
         uname -a
         
-        echo -e "\n=== 主机环境 ==="
-        pwd
-        whoami
-        id
+        echo -e "\n=== K3s 状态 ==="
+        systemctl status k3s || echo "无法获取 K3s 状态"
         
-        echo -e "\n=== 检查 K3s 文件 ==="
-        ls -l /usr/local/bin/k3s || echo "K3s 二进制文件不存在"
-        ls -l /etc/rancher/k3s/k3s.yaml || echo "K3s 配置文件不存在"
+        echo -e "\n=== K3s 文件权限 ==="
+        ls -l /usr/local/bin/k3s
+        ls -l /etc/rancher/k3s/k3s.yaml
         
-        echo -e "\n=== 检查权限 ==="
-        id
-        groups
+        echo -e "\n=== 测试 K3s 命令 ==="
+        /usr/local/bin/k3s kubectl get nodes
       register: system_info
+      become: yes
+      become_user: doge
 
     - name: 显示系统信息
       debug:
