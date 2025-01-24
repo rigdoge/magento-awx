@@ -5,15 +5,8 @@
   vars:
     use_namespace: "{{ namespace | default('default') }}"
     use_nodeport: "{{ nodeport | default('30672') }}"
-  tasks:
-    - name: 创建命名空间
-      shell: |
-        if [ "{{ use_namespace }}" != "default" ]; then
-          echo "=== 创建命名空间 {{ use_namespace }} ==="
-          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
-        fi
-      register: namespace_result
 
+  tasks:
     - name: 创建 RabbitMQ 配置
       copy:
         dest: /tmp/rabbitmq.yaml
@@ -23,8 +16,6 @@
           metadata:
             name: rabbitmq
             namespace: {{ use_namespace }}
-            labels:
-              app: rabbitmq
           spec:
             replicas: 1
             selector:
@@ -43,37 +34,23 @@
                     name: amqp
                   - containerPort: 15672
                     name: management
-                  env:
-                  - name: RABBITMQ_NODENAME
-                    value: "rabbit@localhost"
-                  - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
-                    value: "-rabbit tcp_listeners [{\"0.0.0.0\", 5672}] -rabbit loopback_users []"
                   readinessProbe:
                     tcpSocket:
                       port: 5672
                     initialDelaySeconds: 10
-                    periodSeconds: 5
-                    timeoutSeconds: 3
+                    periodSeconds: 10
                   livenessProbe:
                     tcpSocket:
                       port: 5672
-                    initialDelaySeconds: 30
-                    periodSeconds: 10
-                    timeoutSeconds: 3
-                  volumeMounts:
-                  - name: rabbitmq-data
-                    mountPath: /var/lib/rabbitmq
-                volumes:
-                - name: rabbitmq-data
-                  emptyDir: {}
+                    initialDelaySeconds: 60
+                    periodSeconds: 20
+                    timeoutSeconds: 5
           ---
           apiVersion: v1
           kind: Service
           metadata:
             name: rabbitmq
             namespace: {{ use_namespace }}
-            labels:
-              app: rabbitmq
           spec:
             type: NodePort
             ports:
@@ -90,73 +67,60 @@
 
     - name: 清理旧的部署
       shell: |
-        echo "=== 清理旧的部署 ==="
         /usr/local/bin/k3s kubectl delete -f /tmp/rabbitmq.yaml || true
-        echo "等待资源清理完成..."
         sleep 5
       register: cleanup_result
 
-    - name: 应用 RabbitMQ 配置
+    - name: 部署 RabbitMQ
       shell: |
-        echo "=== 开始部署 RabbitMQ ==="
+        if [ "{{ use_namespace }}" != "default" ]; then
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
         /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
-      register: apply_result
-
-    - name: 等待 Pod 创建
-      shell: |
-        for i in $(seq 1 30); do
-          echo "检查 Pod 创建进度... $i/30"
-          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq 2>/dev/null | grep -q rabbitmq; then
-            echo "Pod 已创建"
-            exit 0
-          fi
-          sleep 2
-        done
-        echo "错误: Pod 未能成功创建"
-        exit 1
-      register: pod_creation_result
+      register: deploy_result
 
     - name: 等待 Pod 就绪
       shell: |
-        for i in $(seq 1 60); do
-          echo "检查 Pod 状态... $i/60"
-          STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}')
-          if [ "$STATUS" = "Running" ]; then
-            READY=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
-            if [ "$READY" = "true" ]; then
-              echo "Pod 已就绪"
+        echo "等待 RabbitMQ Pod 就绪..."
+        attempt=1
+        max_attempts=30
+        while [ $attempt -le $max_attempts ]; do
+          echo "检查 #$attempt..."
+          
+          # 获取 Pod 状态
+          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}')
+          if [ "$POD_STATUS" = "Running" ]; then
+            # 检查就绪状态
+            READY_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+            if [ "$READY_STATUS" = "true" ]; then
+              echo "RabbitMQ Pod 已就绪!"
+              
+              # 显示访问信息
+              NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+              echo -e "\n=== 访问信息 ==="
+              echo "AMQP 端口: $NODE_IP:{{ use_nodeport }}"
+              echo "管理界面: http://$NODE_IP:{{ use_nodeport | int + 1 }}"
+              echo "默认用户名/密码: guest/guest"
               exit 0
             fi
           fi
-          echo "当前状态: $STATUS"
-          /usr/local/bin/k3s kubectl describe pods -n {{ use_namespace }} -l app=rabbitmq
-          sleep 2
+          
+          # 如果 Pod 不在运行或未就绪，显示详细信息
+          echo "Pod 状态: $POD_STATUS"
+          /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} -l app=rabbitmq
+          /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} -l app=rabbitmq
+          
+          attempt=$((attempt + 1))
+          sleep 10
         done
-        echo "错误: Pod 未能在预期时间内就绪"
+        
+        echo "等待超时，RabbitMQ Pod 未就绪"
         exit 1
-      register: pod_ready_result
-
-    - name: 显示部署状态
-      shell: |
-        echo -e "\n=== RabbitMQ 部署状态 ==="
-        echo "Pod 状态:"
-        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o wide
-        
-        echo -e "\nService 状态:"
-        /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=rabbitmq
-        
-        echo -e "\n=== 访问地址 ==="
-        NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
-        echo "AMQP 地址: amqp://$NODE_IP:{{ use_nodeport }}"
-        echo "管理界面: http://$NODE_IP:{{ use_nodeport | int + 1 }}"
-        echo "默认用户名/密码: guest/guest"
-      register: status_result
+      register: wait_result
 
     - name: 显示部署结果
       debug:
         msg: 
-          - "{{ namespace_result.stdout_lines | default([]) }}"
-          - "{{ apply_result.stdout_lines | default([]) }}"
-          - "{{ pod_creation_result.stdout_lines | default([]) }}"
-          - "{{ pod_ready_result.stdout_lines | default([]) }}"
-          - "{{ status_result.stdout_lines | default([]) }}" 
+          - "清理结果: {{ cleanup_result.stdout_lines | default([]) }}"
+          - "部署结果: {{ deploy_result.stdout_lines | default([]) }}"
+          - "等待结果: {{ wait_result.stdout_lines | default([]) }}" 
