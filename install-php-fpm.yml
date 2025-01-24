@@ -6,12 +6,22 @@
     use_namespace: "{{ namespace | default('default') }}"
 
   tasks:
+    - name: 设置变量
+      set_fact:
+        use_namespace: "{{ namespace | default('default') }}"
+
     - name: 创建命名空间
       shell: |
-        if [ "{{ use_namespace }}" != "default" ]; then
-          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
-        fi
+        /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
       register: namespace_result
+
+    - name: 等待命名空间就绪
+      shell: |
+        /usr/local/bin/k3s kubectl get namespace {{ use_namespace }}
+      register: check_namespace
+      until: check_namespace.rc == 0
+      retries: 6
+      delay: 10
 
     - name: 创建 PHP-FPM 配置
       copy:
