@@ -1,0 +1,29 @@
+---
+- name: 检查 K8s 集群状态
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 获取集群状态
+      shell: |
+        echo "=== 节点状态 ==="
+        /usr/local/bin/k3s kubectl get nodes
+        
+        echo -e "\n=== 所有命名空间的 Pod 状态 ==="
+        /usr/local/bin/k3s kubectl get pods -A
+        
+        echo -e "\n=== 资源使用情况 ==="
+        /usr/local/bin/k3s kubectl top pods -A || echo "metrics-server 未安装"
+        
+        echo -e "\n=== 存储类 ==="
+        /usr/local/bin/k3s kubectl get storageclass
+        
+        echo -e "\n=== 持久卷 ==="
+        /usr/local/bin/k3s kubectl get pv
+        
+        echo -e "\n=== 服务状态 ==="
+        /usr/local/bin/k3s kubectl get svc -A
+      register: cluster_info
+
+    - name: 显示集群信息
+      debug:
+        msg: "{{ cluster_info.stdout_lines | default([]) }}" 
