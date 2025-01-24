@@ -3,11 +3,29 @@
   hosts: all
   gather_facts: no
   tasks:
-    - name: 获取版本信息
+    - name: 检查 Pod 状态
       shell: |
         echo "=== Percona Pod 状态 ==="
         /usr/local/bin/k3s kubectl get pods -l app=percona
         
+        # 检查 Pod 是否存在
+        POD_COUNT=$(/usr/local/bin/k3s kubectl get pods -l app=percona -o name | wc -l)
+        if [ "$POD_COUNT" -eq "0" ]; then
+          echo "错误: Percona Pod 不存在，请先运行安装脚本"
+          exit 1
+        fi
+        
+        # 检查 Pod 是否就绪
+        POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -l app=percona -o jsonpath='{.items[0].status.phase}')
+        if [ "$POD_STATUS" != "Running" ]; then
+          echo "错误: Percona Pod 未就绪，当前状态: $POD_STATUS"
+          exit 1
+        fi
+      register: pod_status
+      ignore_errors: yes
+
+    - name: 获取版本信息
+      shell: |
         echo -e "\n=== Percona 版本信息 ==="
         POD_NAME=$(/usr/local/bin/k3s kubectl get pods -l app=percona -o jsonpath='{.items[0].metadata.name}')
         echo "MySQL 命令版本:"
@@ -19,7 +37,9 @@
         echo -e "\n=== 详细版本信息 ==="
         /usr/local/bin/k3s kubectl exec $POD_NAME -- mysql -uroot -proot123 -e "SHOW VARIABLES LIKE '%version%';"
       register: version_info
+      when: pod_status is success
 
     - name: 显示版本信息
       debug:
-        msg: "{{ version_info.stdout_lines | default([]) }}" 
+        msg: "{{ version_info.stdout_lines | default([]) }}"
+      when: version_info is defined and version_info.stdout_lines is defined 
