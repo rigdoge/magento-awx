@@ -1,24 +1,25 @@
 ---
 - name: 检查 K3s 状态
   hosts: all
+  become: true
   tasks:
     - name: 检查 K3s 服务状态
       shell: |
         echo "=== K3s 服务状态 ==="
-        systemctl status k3s || true
+        nsenter -t 1 -m -u -n -i systemctl status k3s || true
         
         echo "=== K3s 版本信息 ==="
-        k3s --version || true
+        nsenter -t 1 -m -u -n -i k3s --version || true
         
         echo "=== K3s 节点状态 ==="
-        k3s kubectl get nodes || true
+        nsenter -t 1 -m -u -n -i k3s kubectl get nodes || true
         
         echo "=== K3s Pod 状态 ==="
-        k3s kubectl get pods -A || true
+        nsenter -t 1 -m -u -n -i k3s kubectl get pods -A || true
         
         echo "=== 系统资源使用情况 ==="
-        free -h
-        df -h /
+        nsenter -t 1 -m -u -n -i free -h || true
+        nsenter -t 1 -m -u -n -i df -h / || true
       register: k3s_status
       changed_when: false
       ignore_errors: yes
@@ -28,27 +29,23 @@
         msg: "{{ k3s_status.stdout_lines }}"
 
     - name: 检查 K3s 文件
-      stat:
-        path: "{{ item }}"
-      loop:
-        - /usr/local/bin/k3s
-        - /etc/rancher/k3s/k3s.yaml
-        - /var/lib/rancher/k3s
+      shell: |
+        echo "=== K3s 文件检查 ==="
+        nsenter -t 1 -m -u -n -i ls -l /usr/local/bin/k3s || true
+        nsenter -t 1 -m -u -n -i ls -l /etc/rancher/k3s/k3s.yaml || true
+        nsenter -t 1 -m -u -n -i ls -l /var/lib/rancher/k3s || true
       register: k3s_files
+      changed_when: false
       ignore_errors: yes
 
     - name: 显示 K3s 文件状态
       debug:
-        msg: |
-          K3s 文件检查结果：
-          {% for item in k3s_files.results %}
-          - {{ item.item }}: {{ '存在' if item.stat.exists|default(false) else '不存在' }}
-          {% endfor %}
+        msg: "{{ k3s_files.stdout_lines }}"
 
     - name: 检查网络端口
       shell: |
         echo "=== 监听端口 ==="
-        netstat -nltp 2>/dev/null || ss -nltp 2>/dev/null || true
+        nsenter -t 1 -m -u -n -i netstat -nltp || nsenter -t 1 -m -u -n -i ss -nltp || true
       register: port_status
       changed_when: false
       ignore_errors: yes
