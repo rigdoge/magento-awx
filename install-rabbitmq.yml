@@ -7,6 +7,11 @@
     use_nodeport: "{{ nodeport | default('30672') }}"
 
   tasks:
+    - name: 创建命名空间
+      shell: "/usr/local/bin/k3s kubectl create namespace {{ use_namespace }} 2>/dev/null || true"
+      when: use_namespace != "default"
+      register: namespace_result
+
     - name: 创建 RabbitMQ 配置
       copy:
         dest: /tmp/rabbitmq.yaml
@@ -66,17 +71,15 @@
               app: rabbitmq
 
     - name: 清理旧的部署
-      shell: |
-        /usr/local/bin/k3s kubectl delete -f /tmp/rabbitmq.yaml || true
-        sleep 5
+      shell: "/usr/local/bin/k3s kubectl delete -f /tmp/rabbitmq.yaml 2>/dev/null || true"
       register: cleanup_result
 
+    - name: 等待资源清理
+      pause:
+        seconds: 5
+
     - name: 部署 RabbitMQ
-      shell: |
-        if [ "{{ use_namespace }}" != "default" ]; then
-          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
-        fi
-        /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
+      shell: "/usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml"
       register: deploy_result
 
     - name: 等待 Pod 就绪
@@ -121,6 +124,7 @@
     - name: 显示部署结果
       debug:
         msg: 
+          - "命名空间: {{ namespace_result.stdout_lines | default([]) }}"
           - "清理结果: {{ cleanup_result.stdout_lines | default([]) }}"
           - "部署结果: {{ deploy_result.stdout_lines | default([]) }}"
           - "等待结果: {{ wait_result.stdout_lines | default([]) }}" 
