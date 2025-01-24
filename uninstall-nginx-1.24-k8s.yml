@@ -6,7 +6,7 @@
     - name: 获取当前 Nginx 状态
       shell: |
         echo "=== 当前 Nginx 资源 ==="
-        k3s kubectl get all,ingress -l app=nginx
+        /usr/local/bin/k3s kubectl get all,ingress -l app=nginx
       register: nginx_status
       ignore_errors: yes
 
@@ -16,16 +16,16 @@
 
     - name: 删除 Nginx 资源
       shell: |
-        k3s kubectl delete ingress nginx-ingress
-        k3s kubectl delete service nginx-service
-        k3s kubectl delete deployment nginx-deployment
+        /usr/local/bin/k3s kubectl delete ingress nginx-ingress
+        /usr/local/bin/k3s kubectl delete service nginx-service
+        /usr/local/bin/k3s kubectl delete deployment nginx-deployment
       register: uninstall_result
       ignore_errors: yes
 
     - name: 确认删除结果
       shell: |
         echo "=== 检查剩余资源 ==="
-        k3s kubectl get all,ingress -l app=nginx
+        /usr/local/bin/k3s kubectl get all,ingress -l app=nginx
       register: check_result
       ignore_errors: yes
 
