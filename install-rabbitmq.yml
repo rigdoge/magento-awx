@@ -93,66 +93,48 @@
         sleep 5
       register: cleanup_result
 
-    - name: 部署 RabbitMQ
+    - name: 应用 RabbitMQ 配置
       shell: |
         echo "=== 开始部署 RabbitMQ ==="
         /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
-        
-        echo "=== 等待 RabbitMQ Pod 就绪 ==="
-        MAX_RETRIES=30
-        RETRY_COUNT=0
-        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-          RETRY_COUNT=$((RETRY_COUNT + 1))
-          
-          echo -e "\n--- 检查周期 $RETRY_COUNT/$MAX_RETRIES ---"
-          
-          # 检查 Pod 状态
-          echo "Pod 状态:"
-          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o wide)
-          echo "$POD_STATUS"
-          
-          # 检查事件
-          echo -e "\n最近事件:"
-          /usr/local/bin/k3s kubectl get events -n "{{ use_namespace }}" --sort-by='.lastTimestamp' | tail -n 5
-          
-          # 检查 Pod 是否在运行
-          RUNNING_STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
-          echo -e "\n运行状态: $RUNNING_STATUS"
-          
-          # 如果 Pod 在运行，检查就绪状态
-          if [ "$RUNNING_STATUS" = "Running" ]; then
-            READY_STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o jsonpath='{.items[0].status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
-            echo "就绪状态: $READY_STATUS"
-            
-            if [ "$READY_STATUS" = "true" ]; then
-              echo "RabbitMQ Pod 已就绪"
-              break
-            fi
-            
-            # 显示容器日志
-            echo -e "\n最新日志:"
-            /usr/local/bin/k3s kubectl logs -n "{{ use_namespace }}" -l app=rabbitmq --tail=10
+      register: apply_result
+
+    - name: 等待 Pod 创建
+      shell: |
+        for i in $(seq 1 30); do
+          echo "检查 Pod 创建进度... $i/30"
+          if /usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq 2>/dev/null | grep -q rabbitmq; then
+            echo "Pod 已创建"
+            exit 0
           fi
-          
-          # 如果 Pod 不在运行，显示详细信息
-          if [ "$RUNNING_STATUS" != "Running" ]; then
-            echo -e "\nPod 详细信息:"
-            /usr/local/bin/k3s kubectl describe pods -n "{{ use_namespace }}" -l app=rabbitmq
-          fi
-          
-          sleep 5
+          sleep 2
         done
-        
-        if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-          echo "错误: RabbitMQ Pod 未能在预期时间内就绪"
-          echo -e "\n=== 最终状态 ==="
-          echo "Pod 详细信息:"
+        echo "错误: Pod 未能成功创建"
+        exit 1
+      register: pod_creation_result
+
+    - name: 等待 Pod 就绪
+      shell: |
+        for i in $(seq 1 60); do
+          echo "检查 Pod 状态... $i/60"
+          STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o jsonpath='{.items[0].status.phase}')
+          if [ "$STATUS" = "Running" ]; then
+            READY=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+            if [ "$READY" = "true" ]; then
+              echo "Pod 已就绪"
+              exit 0
+            fi
+          fi
+          echo "当前状态: $STATUS"
           /usr/local/bin/k3s kubectl describe pods -n "{{ use_namespace }}" -l app=rabbitmq
-          echo -e "\n最新日志:"
-          /usr/local/bin/k3s kubectl logs -n "{{ use_namespace }}" -l app=rabbitmq --tail=50
-          exit 1
-        fi
-        
+          sleep 2
+        done
+        echo "错误: Pod 未能在预期时间内就绪"
+        exit 1
+      register: pod_ready_result
+
+    - name: 显示部署状态
+      shell: |
         echo -e "\n=== RabbitMQ 部署状态 ==="
         echo "Pod 状态:"
         /usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o wide
@@ -165,8 +147,12 @@
         echo "AMQP 地址: amqp://$NODE_IP:{{ use_nodeport }}"
         echo "管理界面: http://$NODE_IP:{{ use_nodeport | int + 1 }}"
         echo "默认用户名/密码: guest/guest"
-      register: deploy_result
+      register: status_result
 
     - name: 显示部署结果
       debug:
-        msg: "{{ deploy_result.stdout_lines }}" 
+        msg: 
+          - "{{ apply_result.stdout_lines | default([]) }}"
+          - "{{ pod_creation_result.stdout_lines | default([]) }}"
+          - "{{ pod_ready_result.stdout_lines | default([]) }}"
+          - "{{ status_result.stdout_lines | default([]) }}" 
