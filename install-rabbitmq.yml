@@ -40,33 +40,36 @@
                     name: amqp
                   - containerPort: 15672
                     name: management
+                  env:
+                  - name: RABBITMQ_NODENAME
+                    value: "rabbit@localhost"
+                  - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
+                    value: "-rabbit tcp_listeners [{\"0.0.0.0\", 5672}] -rabbit loopback_users []"
                   resources:
                     requests:
+                      memory: "256Mi"
+                      cpu: "200m"
+                    limits:
                       memory: "512Mi"
                       cpu: "500m"
-                    limits:
-                      memory: "1Gi"
-                      cpu: "1000m"
                   readinessProbe:
+                    tcpSocket:
+                      port: 5672
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                  livenessProbe:
                     tcpSocket:
                       port: 5672
                     initialDelaySeconds: 30
                     periodSeconds: 10
-                    timeoutSeconds: 5
-                  livenessProbe:
-                    tcpSocket:
-                      port: 5672
-                    initialDelaySeconds: 60
-                    periodSeconds: 20
-                    timeoutSeconds: 5
+                    timeoutSeconds: 3
                   volumeMounts:
                   - name: rabbitmq-data
                     mountPath: /var/lib/rabbitmq
                 volumes:
                 - name: rabbitmq-data
-                  hostPath:
-                    path: /data/rabbitmq
-                    type: DirectoryOrCreate
+                  emptyDir: {}
           ---
           apiVersion: v1
           kind: Service
@@ -103,7 +106,7 @@
         /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
         
         echo "=== 等待 RabbitMQ Pod 就绪 ==="
-        MAX_RETRIES=60
+        MAX_RETRIES=30
         RETRY_COUNT=0
         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
           RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -115,9 +118,13 @@
           POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o wide)
           echo "$POD_STATUS"
           
+          # 检查事件
+          echo -e "\n最近事件:"
+          /usr/local/bin/k3s kubectl get events -n {{ use_namespace }} --sort-by='.lastTimestamp' | tail -n 5
+          
           # 检查 Pod 是否在运行
           RUNNING_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
-          echo "运行状态: $RUNNING_STATUS"
+          echo -e "\n运行状态: $RUNNING_STATUS"
           
           # 如果 Pod 在运行，检查就绪状态
           if [ "$RUNNING_STATUS" = "Running" ]; then
@@ -131,7 +138,7 @@
             
             # 显示容器日志
             echo -e "\n最新日志:"
-            /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} -l app=rabbitmq --tail=20
+            /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} -l app=rabbitmq --tail=10
           fi
           
           # 如果 Pod 不在运行，显示详细信息
