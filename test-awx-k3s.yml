@@ -8,18 +8,19 @@
         echo "=== 系统信息 ==="
         uname -a
         
-        echo -e "\n=== K3s 版本 ==="
-        /usr/local/bin/k3s --version
+        echo -e "\n=== 主机环境 ==="
+        pwd
+        whoami
+        id
         
-        echo -e "\n=== K3s 节点 ==="
-        /usr/local/bin/k3s kubectl get nodes
+        echo -e "\n=== 检查 K3s 文件 ==="
+        ls -l /usr/local/bin/k3s || echo "K3s 二进制文件不存在"
+        ls -l /etc/rancher/k3s/k3s.yaml || echo "K3s 配置文件不存在"
         
-        echo -e "\n=== K3s 系统 Pod ==="
-        /usr/local/bin/k3s kubectl get pods -n kube-system
+        echo -e "\n=== 检查权限 ==="
+        id
+        groups
       register: system_info
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      become: yes
 
     - name: 显示系统信息
       debug:
