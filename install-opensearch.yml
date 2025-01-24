@@ -1,0 +1,127 @@
+---
+- name: 安装 OpenSearch 2.12.0
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 设置变量
+      set_fact:
+        use_namespace: "{{ namespace | default('default') }}"
+        use_nodeport: "{{ nodeport | default('30920') }}"
+
+    - name: 创建 OpenSearch 配置
+      copy:
+        dest: /tmp/opensearch.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: opensearch
+            namespace: {{ use_namespace }}
+            labels:
+              app: opensearch
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: opensearch
+            template:
+              metadata:
+                labels:
+                  app: opensearch
+              spec:
+                containers:
+                - name: opensearch
+                  image: opensearchproject/opensearch:2.12.0
+                  ports:
+                  - containerPort: 9200
+                    name: http
+                  - containerPort: 9300
+                    name: transport
+                  - containerPort: 9600
+                    name: metrics
+                  env:
+                  - name: discovery.type
+                    value: single-node
+                  - name: DISABLE_SECURITY_PLUGIN
+                    value: "true"
+                  - name: DISABLE_INSTALL_DEMO_CONFIG
+                    value: "true"
+                  resources:
+                    requests:
+                      memory: "2Gi"
+                      cpu: "1000m"
+                    limits:
+                      memory: "4Gi"
+                      cpu: "2000m"
+                  readinessProbe:
+                    httpGet:
+                      path: /_cluster/health
+                      port: 9200
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                  volumeMounts:
+                  - name: opensearch-data
+                    mountPath: /usr/share/opensearch/data
+                volumes:
+                - name: opensearch-data
+                  hostPath:
+                    path: /data/opensearch
+                    type: DirectoryOrCreate
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: opensearch
+            namespace: {{ use_namespace }}
+            labels:
+              app: opensearch
+          spec:
+            type: NodePort
+            ports:
+            - port: 9200
+              targetPort: 9200
+              nodePort: {{ use_nodeport }}
+              name: http
+            - port: 9300
+              targetPort: 9300
+              name: transport
+            - port: 9600
+              targetPort: 9600
+              name: metrics
+            selector:
+              app: opensearch
+
+    - name: 清理旧的部署
+      shell: |
+        /usr/local/bin/k3s kubectl delete -f /tmp/opensearch.yaml || true
+        sleep 5
+      register: cleanup_result
+
+    - name: 部署 OpenSearch
+      shell: |
+        /usr/local/bin/k3s kubectl apply -f /tmp/opensearch.yaml
+        
+        echo "等待 OpenSearch Pod 就绪..."
+        for i in {1..60}; do
+          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=opensearch -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
+            echo "OpenSearch Pod 已就绪"
+            break
+          fi
+          echo "等待中... $i"
+          sleep 5
+        done
+        
+        echo -e "\n=== OpenSearch 部署状态 ==="
+        echo "Pod 状态:"
+        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=opensearch
+        echo -e "\nService 状态:"
+        /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=opensearch
+        
+        echo -e "\n=== 访问地址 ==="
+        NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+        echo "http://$NODE_IP:{{ use_nodeport }}"
+      register: deploy_result
+
+    - name: 显示部署结果
+      debug:
+        msg: "{{ deploy_result.stdout_lines }}" 
