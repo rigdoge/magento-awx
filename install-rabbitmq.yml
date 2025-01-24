@@ -1,0 +1,104 @@
+---
+- name: 安装 RabbitMQ 3.13.7
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 创建 RabbitMQ 配置
+      copy:
+        dest: /tmp/rabbitmq.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: rabbitmq
+            labels:
+              app: rabbitmq
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: rabbitmq
+            template:
+              metadata:
+                labels:
+                  app: rabbitmq
+              spec:
+                containers:
+                - name: rabbitmq
+                  # RabbitMQ 3.13.x 需要 Erlang 25.0 或更高版本
+                  image: rabbitmq:3.13.0-management
+                  env:
+                  - name: RABBITMQ_DEFAULT_USER
+                    value: "admin"
+                  - name: RABBITMQ_DEFAULT_PASS
+                    value: "admin123"
+                  ports:
+                  - containerPort: 5672
+                    name: amqp
+                  - containerPort: 15672
+                    name: management
+                  resources:
+                    limits:
+                      cpu: "1"
+                      memory: "1Gi"
+                    requests:
+                      cpu: "0.5"
+                      memory: "512Mi"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: rabbitmq
+          spec:
+            type: NodePort
+            ports:
+            - port: 5672
+              targetPort: 5672
+              nodePort: 30672
+              name: amqp
+            - port: 15672
+              targetPort: 15672
+              nodePort: 31672
+              name: management
+            selector:
+              app: rabbitmq
+
+    - name: 清理旧部署
+      shell: |
+        /usr/local/bin/k3s kubectl delete -f /tmp/rabbitmq.yaml || true
+        sleep 5
+
+    - name: 部署 RabbitMQ
+      shell: /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
+      register: deploy_result
+
+    - name: 等待 Pod 就绪
+      shell: |
+        echo "等待 Pod 就绪..."
+        /usr/local/bin/k3s kubectl wait --for=condition=ready pod -l app=rabbitmq --timeout=300s
+      register: wait_result
+
+    - name: 显示 RabbitMQ 访问信息
+      shell: |
+        echo "=== RabbitMQ 部署状态 ==="
+        /usr/local/bin/k3s kubectl get pods -l app=rabbitmq
+        
+        echo -e "\n=== RabbitMQ 服务信息 ==="
+        /usr/local/bin/k3s kubectl get svc rabbitmq
+        
+        echo -e "\n=== RabbitMQ 版本信息 ==="
+        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -l app=rabbitmq -o jsonpath='{.items[0].metadata.name}')
+        echo "RabbitMQ 版本:"
+        /usr/local/bin/k3s kubectl exec $POD_NAME -- rabbitmqctl version
+        echo "Erlang 版本:"
+        /usr/local/bin/k3s kubectl exec $POD_NAME -- erl -eval '{ok, Version} = file:read_file("/usr/local/lib/erlang/releases/RELEASES"), io:format("~s~n", [Version]), halt().' -noshell
+        
+        echo -e "\n=== RabbitMQ 访问方式 ==="
+        echo "AMQP 端口: 30672"
+        echo "管理界面: http://服务器IP:31672"
+        echo "用户名/密码: admin/admin123"
+      register: access_info
+
+    - name: 显示访问信息
+      debug:
+        msg: "{{ access_info.stdout_lines | default([]) }}" 
