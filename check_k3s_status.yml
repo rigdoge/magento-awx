@@ -36,4 +36,37 @@
 
     - name: 显示端口状态
       debug:
-        msg: "{{ k3s_ports.stdout_lines | default([]) }}" 
+        msg: "{{ k3s_ports.stdout_lines | default([]) }}"
+
+    - name: 检查 K3s 集群状态
+      shell: |
+        echo "=== K3s 集群状态 ==="
+        # 检查 kubectl 配置
+        echo "检查 kubectl 配置文件:"
+        ls -l /etc/rancher/k3s/k3s.yaml 2>/dev/null || echo "未找到 kubectl 配置文件"
+        
+        # 检查 K3s 节点状态
+        echo -e "\n检查节点状态:"
+        KUBECONFIG=/etc/rancher/k3s/k3s.yaml k3s kubectl get nodes || echo "无法获取节点信息"
+        
+        # 检查默认命名空间
+        echo -e "\n检查默认命名空间 Pod:"
+        KUBECONFIG=/etc/rancher/k3s/k3s.yaml k3s kubectl get pods || echo "无法获取 Pod 信息"
+        
+        # 检查存储类
+        echo -e "\n检查存储类:"
+        KUBECONFIG=/etc/rancher/k3s/k3s.yaml k3s kubectl get sc || echo "无法获取存储类信息"
+        
+        # 检查 Ingress 控制器
+        echo -e "\n检查 Ingress 控制器:"
+        KUBECONFIG=/etc/rancher/k3s/k3s.yaml k3s kubectl get pods -n kube-system | grep traefik || echo "未找到 Traefik Ingress 控制器"
+        
+        # 检查网络端口
+        echo -e "\n检查 K3s API 端口:"
+        netstat -ntlp 2>/dev/null | grep 6443 || echo "API 端口 6443 未监听"
+      register: k3s_status
+      ignore_errors: yes
+
+    - name: 显示检查结果
+      debug:
+        msg: "{{ k3s_status.stdout_lines | default([]) }}" 
