@@ -3,23 +3,25 @@
   hosts: all
   gather_facts: no
   tasks:
-    - name: 检查 K3s 服务状态
+    - name: 检查 K3s 进程和文件
       shell: |
-        echo "=== K3s 服务状态 ==="
-        systemctl status k3s || true
+        echo "=== K3s 进程状态 ==="
+        ps aux | grep k3s | grep -v grep || true
         
-        echo "=== K3s 版本信息 ==="
-        k3s --version || true
+        echo "=== K3s 二进制文件 ==="
+        which k3s || true
         
-        echo "=== K3s 节点状态 ==="
-        k3s kubectl get nodes || true
+        echo "=== K3s 配置目录 ==="
+        ls -la /etc/rancher/k3s/ || true
         
-        echo "=== K3s Pod 状态 ==="
-        k3s kubectl get pods -A || true
+        echo "=== K3s 数据目录 ==="
+        ls -la /var/lib/rancher/k3s/ || true
         
         echo "=== 系统资源使用情况 ==="
-        free -h || true
-        df -h / || true
+        df -h || true
+        
+        echo "=== 网络端口 ==="
+        cat /proc/net/tcp || true
       register: k3s_status
       changed_when: false
       ignore_errors: yes
