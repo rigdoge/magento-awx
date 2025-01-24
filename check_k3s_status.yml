@@ -1,45 +1,39 @@
 ---
 - name: 检查 K3s 状态
   hosts: all
-  become: yes
   gather_facts: no
   tasks:
-    - name: 检查 K3s 状态
+    - name: 检查 K3s 进程
       shell: |
         echo "=== K3s 进程状态 ==="
         ps aux | grep k3s | grep -v grep
-        
-        echo "=== K3s 服务状态 ==="
-        systemctl status k3s
-      register: k3s_status
+      register: k3s_process
       ignore_errors: yes
 
-    - name: 显示 K3s 状态
+    - name: 显示 K3s 进程
       debug:
-        msg: "{{ k3s_status.stdout_lines }}"
+        msg: "{{ k3s_process.stdout_lines | default([]) }}"
 
     - name: 检查 K3s 文件
       shell: |
         echo "=== K3s 文件检查 ==="
-        ls -l /usr/local/bin/k3s || true
-        ls -l /etc/rancher/k3s/k3s.yaml || true
-        ls -l /var/lib/rancher/k3s || true
+        ls -l /usr/local/bin/k3s 2>/dev/null || echo "K3s 二进制文件不存在"
+        ls -l /etc/rancher/k3s/k3s.yaml 2>/dev/null || echo "K3s 配置文件不存在"
+        ls -ld /var/lib/rancher/k3s 2>/dev/null || echo "K3s 数据目录不存在"
       register: k3s_files
-      changed_when: false
       ignore_errors: yes
 
     - name: 显示 K3s 文件状态
       debug:
-        msg: "{{ k3s_files.stdout_lines }}"
+        msg: "{{ k3s_files.stdout_lines | default([]) }}"
 
     - name: 检查网络端口
       shell: |
-        echo "=== 监听端口 ==="
-        netstat -nltp || ss -nltp || true
-      register: port_status
-      changed_when: false
+        echo "=== K3s 相关端口 ==="
+        netstat -ntlp 2>/dev/null | grep -E '6443|8472|10250' || echo "未发现 K3s 相关端口"
+      register: k3s_ports
       ignore_errors: yes
 
     - name: 显示端口状态
       debug:
-        msg: "{{ port_status.stdout_lines }}" 
+        msg: "{{ k3s_ports.stdout_lines | default([]) }}" 
