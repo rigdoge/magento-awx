@@ -1,53 +1,34 @@
 ---
-- name: Uninstall Nginx 1.24 from Kubernetes
-  hosts: localhost
+- name: 从 K3s 中卸载 Nginx 1.24
+  hosts: all
   gather_facts: no
   tasks:
-    - name: Remove Nginx Service
-      k8s:
-        state: absent
-        definition:
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: nginx
-            namespace: nginx-system
+    - name: 获取当前 Nginx 状态
+      shell: |
+        echo "=== 当前 Nginx 资源 ==="
+        kubectl get all,ingress -l app=nginx
+      register: nginx_status
+      ignore_errors: yes
 
-    - name: Remove Nginx Deployment
-      k8s:
-        state: absent
-        definition:
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: nginx
-            namespace: nginx-system
+    - name: 显示当前状态
+      debug:
+        msg: "{{ nginx_status.stdout_lines | default([]) }}"
 
-    - name: Remove Nginx ConfigMap
-      k8s:
-        state: absent
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: nginx-config
-            namespace: nginx-system
+    - name: 删除 Nginx 资源
+      shell: |
+        kubectl delete ingress nginx-ingress
+        kubectl delete service nginx-service
+        kubectl delete deployment nginx-deployment
+      register: uninstall_result
+      ignore_errors: yes
 
-    - name: Remove Nginx SSL Secret
-      k8s:
-        state: absent
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: nginx-ssl
-            namespace: nginx-system
+    - name: 确认删除结果
+      shell: |
+        echo "=== 检查剩余资源 ==="
+        kubectl get all,ingress -l app=nginx
+      register: check_result
+      ignore_errors: yes
 
-    - name: Remove Nginx namespace
-      k8s:
-        state: absent
-        definition:
-          apiVersion: v1
-          kind: Namespace
-          metadata:
-            name: nginx-system
+    - name: 显示删除结果
+      debug:
+        msg: "{{ check_result.stdout_lines | default([]) }}"
