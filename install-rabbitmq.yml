@@ -25,8 +25,8 @@
               spec:
                 containers:
                 - name: rabbitmq
-                  # RabbitMQ 3.13.x 需要 Erlang 25.0 或更高版本
-                  image: rabbitmq:3.13.0-management
+                  # RabbitMQ 3.13.x 需要 Erlang 26.0 或更高版本
+                  image: rabbitmq:3.13-management-alpine
                   env:
                   - name: RABBITMQ_DEFAULT_USER
                     value: "admin"
@@ -91,7 +91,7 @@
         echo "RabbitMQ 版本:"
         /usr/local/bin/k3s kubectl exec $POD_NAME -- rabbitmqctl version
         echo "Erlang 版本:"
-        /usr/local/bin/k3s kubectl exec $POD_NAME -- erl -eval '{ok, Version} = file:read_file("/usr/local/lib/erlang/releases/RELEASES"), io:format("~s~n", [Version]), halt().' -noshell
+        /usr/local/bin/k3s kubectl exec $POD_NAME -- erl -eval 'erlang:display(erlang:system_info(version)), halt().' -noshell
         
         echo -e "\n=== RabbitMQ 访问方式 ==="
         echo "AMQP 端口: 30672"
