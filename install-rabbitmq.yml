@@ -8,8 +8,8 @@
   tasks:
     - name: 设置变量
       set_fact:
-        use_namespace: "{{ namespace | default(default_namespace) }}"
-        use_nodeport: "{{ nodeport | default(default_nodeport) }}"
+        use_namespace: "{{ namespace | default('default') }}"
+        use_nodeport: "{{ nodeport | default('30672') }}"
 
     - name: 创建 RabbitMQ 配置
       copy:
@@ -19,7 +19,7 @@
           kind: Deployment
           metadata:
             name: rabbitmq
-            namespace: {{ use_namespace }}
+            namespace: "{{ use_namespace }}"
             labels:
               app: rabbitmq
           spec:
@@ -68,7 +68,7 @@
           kind: Service
           metadata:
             name: rabbitmq
-            namespace: {{ use_namespace }}
+            namespace: "{{ use_namespace }}"
             labels:
               app: rabbitmq
           spec:
@@ -108,20 +108,20 @@
           
           # 检查 Pod 状态
           echo "Pod 状态:"
-          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o wide)
+          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o wide)
           echo "$POD_STATUS"
           
           # 检查事件
           echo -e "\n最近事件:"
-          /usr/local/bin/k3s kubectl get events -n {{ use_namespace }} --sort-by='.lastTimestamp' | tail -n 5
+          /usr/local/bin/k3s kubectl get events -n "{{ use_namespace }}" --sort-by='.lastTimestamp' | tail -n 5
           
           # 检查 Pod 是否在运行
-          RUNNING_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
+          RUNNING_STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
           echo -e "\n运行状态: $RUNNING_STATUS"
           
           # 如果 Pod 在运行，检查就绪状态
           if [ "$RUNNING_STATUS" = "Running" ]; then
-            READY_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+            READY_STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o jsonpath='{.items[0].status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
             echo "就绪状态: $READY_STATUS"
             
             if [ "$READY_STATUS" = "true" ]; then
@@ -131,13 +131,13 @@
             
             # 显示容器日志
             echo -e "\n最新日志:"
-            /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} -l app=rabbitmq --tail=10
+            /usr/local/bin/k3s kubectl logs -n "{{ use_namespace }}" -l app=rabbitmq --tail=10
           fi
           
           # 如果 Pod 不在运行，显示详细信息
           if [ "$RUNNING_STATUS" != "Running" ]; then
             echo -e "\nPod 详细信息:"
-            /usr/local/bin/k3s kubectl describe pods -n {{ use_namespace }} -l app=rabbitmq
+            /usr/local/bin/k3s kubectl describe pods -n "{{ use_namespace }}" -l app=rabbitmq
           fi
           
           sleep 5
@@ -147,18 +147,18 @@
           echo "错误: RabbitMQ Pod 未能在预期时间内就绪"
           echo -e "\n=== 最终状态 ==="
           echo "Pod 详细信息:"
-          /usr/local/bin/k3s kubectl describe pods -n {{ use_namespace }} -l app=rabbitmq
+          /usr/local/bin/k3s kubectl describe pods -n "{{ use_namespace }}" -l app=rabbitmq
           echo -e "\n最新日志:"
-          /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} -l app=rabbitmq --tail=50
+          /usr/local/bin/k3s kubectl logs -n "{{ use_namespace }}" -l app=rabbitmq --tail=50
           exit 1
         fi
         
         echo -e "\n=== RabbitMQ 部署状态 ==="
         echo "Pod 状态:"
-        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o wide
+        /usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=rabbitmq -o wide
         
         echo -e "\nService 状态:"
-        /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=rabbitmq
+        /usr/local/bin/k3s kubectl get svc -n "{{ use_namespace }}" -l app=rabbitmq
         
         echo -e "\n=== 访问地址 ==="
         NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
