@@ -3,13 +3,16 @@
   hosts: all
   gather_facts: no
   vars:
-    default_namespace: default
-    default_nodeport: "30180"
+    use_namespace: "{{ namespace | default('default') }}"
+    use_nodeport: "{{ nodeport | default('30180') }}"
   tasks:
-    - name: 设置变量
-      set_fact:
-        use_namespace: "{{ namespace | default('default') }}"
-        use_nodeport: "{{ nodeport | default('30180') }}"
+    - name: 创建命名空间
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          echo "=== 创建命名空间 {{ use_namespace }} ==="
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+      register: namespace_result
 
     - name: 创建 Nginx 配置
       copy:
@@ -19,7 +22,7 @@
           kind: Deployment
           metadata:
             name: nginx
-            namespace: "{{ use_namespace }}"
+            namespace: {{ use_namespace }}
             labels:
               app: nginx
           spec:
@@ -56,7 +59,7 @@
           kind: Service
           metadata:
             name: nginx
-            namespace: "{{ use_namespace }}"
+            namespace: {{ use_namespace }}
             labels:
               app: nginx
           spec:
@@ -86,7 +89,7 @@
       shell: |
         for i in $(seq 1 30); do
           echo "检查 Pod 创建进度... $i/30"
-          if /usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=nginx 2>/dev/null | grep -q nginx; then
+          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=nginx 2>/dev/null | grep -q nginx; then
             echo "Pod 已创建"
             exit 0
           fi
@@ -100,16 +103,16 @@
       shell: |
         for i in $(seq 1 60); do
           echo "检查 Pod 状态... $i/60"
-          STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=nginx -o jsonpath='{.items[0].status.phase}')
+          STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=nginx -o jsonpath='{.items[0].status.phase}')
           if [ "$STATUS" = "Running" ]; then
-            READY=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=nginx -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+            READY=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=nginx -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
             if [ "$READY" = "true" ]; then
               echo "Pod 已就绪"
               exit 0
             fi
           fi
           echo "当前状态: $STATUS"
-          /usr/local/bin/k3s kubectl describe pods -n "{{ use_namespace }}" -l app=nginx
+          /usr/local/bin/k3s kubectl describe pods -n {{ use_namespace }} -l app=nginx
           sleep 2
         done
         echo "错误: Pod 未能在预期时间内就绪"
@@ -120,10 +123,10 @@
       shell: |
         echo -e "\n=== Nginx 部署状态 ==="
         echo "Pod 状态:"
-        /usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=nginx -o wide
+        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=nginx -o wide
         
         echo -e "\nService 状态:"
-        /usr/local/bin/k3s kubectl get svc -n "{{ use_namespace }}" -l app=nginx
+        /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=nginx
         
         echo -e "\n=== 访问地址 ==="
         NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
@@ -133,6 +136,7 @@
     - name: 显示部署结果
       debug:
         msg: 
+          - "{{ namespace_result.stdout_lines | default([]) }}"
           - "{{ apply_result.stdout_lines | default([]) }}"
           - "{{ pod_creation_result.stdout_lines | default([]) }}"
           - "{{ pod_ready_result.stdout_lines | default([]) }}"
