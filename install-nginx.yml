@@ -2,10 +2,14 @@
 - name: 安装 Nginx 1.24
   hosts: all
   gather_facts: no
+  vars:
+    namespace: "{{ namespace | default('default') }}"
   tasks:
     - name: 创建命名空间
       shell: |
-        /usr/local/bin/k3s kubectl create namespace {{ namespace }} || true
+        if [ "{{ namespace }}" != "default" ]; then
+          /usr/local/bin/k3s kubectl create namespace {{ namespace }} || true
+        fi
       register: namespace_result
 
     - name: 创建 Nginx 配置
@@ -95,6 +99,10 @@
         /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=nginx
         echo -e "\nService 状态:"
         /usr/local/bin/k3s kubectl get svc -n {{ namespace }} -l app=nginx
+        
+        echo -e "\n=== 访问地址 ==="
+        NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+        echo "http://$NODE_IP:30180"
       register: deploy_result
 
     - name: 显示部署结果
