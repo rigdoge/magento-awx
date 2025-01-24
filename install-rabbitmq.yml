@@ -4,20 +4,9 @@
   gather_facts: no
   vars:
     use_namespace: "{{ namespace | default('default') }}"
-    use_nodeport: "{{ nodeport | default('30672') }}"
+    use_nodeport: "{{ nodeport | default('30672') | int }}"
 
   tasks:
-    - name: 创建命名空间
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Namespace
-          metadata:
-            name: "{{ use_namespace }}"
-      when: use_namespace != "default"
-      register: namespace_result
-
     - name: 创建 RabbitMQ 配置
       copy:
         dest: /tmp/rabbitmq.yaml
@@ -71,49 +60,67 @@
               name: amqp
             - port: 15672
               targetPort: 15672
-              nodePort: {{ use_nodeport | int + 1 }}
+              nodePort: {{ use_nodeport + 1 }}
               name: management
             selector:
               app: rabbitmq
 
     - name: 清理旧的部署
-      kubernetes.core.k8s:
-        state: absent
-        definition: "{{ lookup('file', '/tmp/rabbitmq.yaml') | from_yaml_all | list }}"
+      shell: |
+        /usr/local/bin/k3s kubectl delete -f /tmp/rabbitmq.yaml || true
+        sleep 5
       register: cleanup_result
 
-    - name: 等待资源清理
-      pause:
-        seconds: 5
-
     - name: 部署 RabbitMQ
-      kubernetes.core.k8s:
-        state: present
-        definition: "{{ lookup('file', '/tmp/rabbitmq.yaml') | from_yaml_all | list }}"
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+        /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
       register: deploy_result
 
     - name: 等待 Pod 就绪
-      kubernetes.core.k8s_info:
-        kind: Pod
-        namespace: "{{ use_namespace }}"
-        label_selectors:
-          - app=rabbitmq
-        wait: yes
-        wait_timeout: 300
-        wait_condition:
-          type: Ready
-          status: "True"
-      register: pod_result
+      shell: |
+        echo "等待 RabbitMQ Pod 就绪..."
+        attempt=1
+        max_attempts=30
+        while [ $attempt -le $max_attempts ]; do
+          echo "检查 #$attempt..."
+          
+          # 获取 Pod 状态
+          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}')
+          if [ "$POD_STATUS" = "Running" ]; then
+            # 检查就绪状态
+            READY_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+            if [ "$READY_STATUS" = "true" ]; then
+              echo "RabbitMQ Pod 已就绪!"
+              
+              # 显示访问信息
+              NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+              echo -e "\n=== 访问信息 ==="
+              echo "AMQP 端口: $NODE_IP:{{ use_nodeport }}"
+              echo "管理界面: http://$NODE_IP:{{ use_nodeport + 1 }}"
+              echo "默认用户名/密码: guest/guest"
+              exit 0
+            fi
+          fi
+          
+          # 如果 Pod 不在运行或未就绪，显示详细信息
+          echo "Pod 状态: $POD_STATUS"
+          /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} -l app=rabbitmq
+          /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} -l app=rabbitmq
+          
+          attempt=$((attempt + 1))
+          sleep 10
+        done
+        
+        echo "等待超时，RabbitMQ Pod 未就绪"
+        exit 1
+      register: wait_result
 
-    - name: 获取节点 IP
-      shell: "/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}'"
-      register: node_ip
-      changed_when: false
-
-    - name: 显示访问信息
+    - name: 显示部署结果
       debug:
-        msg:
-          - "=== 访问信息 ==="
-          - "AMQP 端口: {{ node_ip.stdout }}:{{ use_nodeport }}"
-          - "管理界面: http://{{ node_ip.stdout }}:{{ use_nodeport | int + 1 }}"
-          - "默认用户名/密码: guest/guest" 
+        msg: 
+          - "清理结果: {{ cleanup_result.stdout_lines | default([]) }}"
+          - "部署结果: {{ deploy_result.stdout_lines | default([]) }}"
+          - "等待结果: {{ wait_result.stdout_lines | default([]) }}" 
