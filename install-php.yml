@@ -3,11 +3,6 @@
   hosts: all
   gather_facts: no
   tasks:
-    - name: 创建 magento 命名空间
-      shell: |
-        /usr/local/bin/k3s kubectl create namespace magento || true
-      register: namespace_result
-
     - name: 创建 PHP-FPM 配置
       copy:
         dest: /tmp/php-fpm.yaml
@@ -16,7 +11,7 @@
           kind: Deployment
           metadata:
             name: php-fpm
-            namespace: magento
+            namespace: "{{ namespace }}"
           spec:
             replicas: 1
             selector:
@@ -107,7 +102,7 @@
           kind: Service
           metadata:
             name: php-fpm
-            namespace: magento
+            namespace: "{{ namespace }}"
           spec:
             selector:
               app: php-fpm
@@ -130,7 +125,7 @@
     - name: 等待 PHP-FPM Pod 就绪
       shell: |
         for i in {1..30}; do
-          if /usr/local/bin/k3s kubectl get pods -n magento -l app=php-fpm -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
+          if /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
             echo "PHP-FPM Pod 已就绪"
             break
           fi
@@ -142,16 +137,16 @@
     - name: 显示 PHP-FPM 状态
       shell: |
         echo "=== PHP-FPM Pod 状态 ==="
-        /usr/local/bin/k3s kubectl get pods -n magento -l app=php-fpm
+        /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=php-fpm
         
         echo -e "\n=== PHP-FPM 版本 ==="
-        /usr/local/bin/k3s kubectl exec -n magento -l app=php-fpm -- php -v
+        /usr/local/bin/k3s kubectl exec -n {{ namespace }} -l app=php-fpm -- php -v
         
         echo -e "\n=== PHP 扩展列表 ==="
-        /usr/local/bin/k3s kubectl exec -n magento -l app=php-fpm -- php -m
+        /usr/local/bin/k3s kubectl exec -n {{ namespace }} -l app=php-fpm -- php -m
         
         echo -e "\n=== Opcache 配置 ==="
-        /usr/local/bin/k3s kubectl exec -n magento -l app=php-fpm -- php -i | grep -i opcache
+        /usr/local/bin/k3s kubectl exec -n {{ namespace }} -l app=php-fpm -- php -i | grep -i opcache
       register: status_result
 
     - name: 显示部署结果

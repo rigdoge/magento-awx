@@ -1,13 +1,8 @@
 ---
-- name: 安装 RabbitMQ 3.13.7
+- name: 安装 RabbitMQ 3.13
   hosts: all
   gather_facts: no
   tasks:
-    - name: 创建命名空间
-      shell: |
-        /usr/local/bin/k3s kubectl create namespace magento || true
-      register: namespace_result
-
     - name: 创建 RabbitMQ 配置
       copy:
         dest: /tmp/rabbitmq.yaml
@@ -16,9 +11,7 @@
           kind: Deployment
           metadata:
             name: rabbitmq
-            namespace: magento
-            labels:
-              app: rabbitmq
+            namespace: "{{ namespace }}"
           spec:
             replicas: 1
             selector:
@@ -31,33 +24,33 @@
               spec:
                 containers:
                 - name: rabbitmq
-                  # RabbitMQ 3.13.x 需要 Erlang 26.0 或更高版本
-                  image: rabbitmq:3.13-management-alpine
-                  env:
-                  - name: RABBITMQ_DEFAULT_USER
-                    value: "admin"
-                  - name: RABBITMQ_DEFAULT_PASS
-                    value: "admin123"
-                  ports:
-                  - containerPort: 5672
-                    name: amqp
-                  - containerPort: 15672
-                    name: management
+                  image: rabbitmq:3.13-management
                   resources:
                     limits:
                       cpu: "1"
                       memory: "1Gi"
                     requests:
-                      cpu: "0.5"
+                      cpu: "500m"
                       memory: "512Mi"
+                  ports:
+                  - containerPort: 5672
+                    name: amqp
+                  - containerPort: 15672
+                    name: management
+                  readinessProbe:
+                    tcpSocket:
+                      port: 5672
+                    initialDelaySeconds: 10
+                    periodSeconds: 30
           ---
           apiVersion: v1
           kind: Service
           metadata:
             name: rabbitmq
-            namespace: magento
+            namespace: "{{ namespace }}"
           spec:
-            type: NodePort
+            selector:
+              app: rabbitmq
             ports:
             - port: 5672
               targetPort: 5672
@@ -67,45 +60,49 @@
               targetPort: 15672
               nodePort: 31672
               name: management
-            selector:
-              app: rabbitmq
+            type: NodePort
 
-    - name: 清理旧部署
+    - name: 清理旧的部署
       shell: |
         /usr/local/bin/k3s kubectl delete -f /tmp/rabbitmq.yaml || true
         sleep 5
+      register: cleanup_result
 
     - name: 部署 RabbitMQ
-      shell: /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
+      shell: |
+        /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
       register: deploy_result
 
-    - name: 等待 Pod 就绪
+    - name: 等待 RabbitMQ Pod 就绪
       shell: |
-        echo "等待 Pod 就绪..."
-        /usr/local/bin/k3s kubectl wait --for=condition=ready pod -l app=rabbitmq -n magento --timeout=300s
+        for i in {1..30}; do
+          if /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
+            echo "RabbitMQ Pod 已就绪"
+            break
+          fi
+          echo "等待 RabbitMQ Pod 就绪... $i"
+          sleep 3
+        done
       register: wait_result
 
-    - name: 显示 RabbitMQ 访问信息
+    - name: 显示 RabbitMQ 状态
       shell: |
-        echo "=== RabbitMQ 部署状态 ==="
-        /usr/local/bin/k3s kubectl get pods -l app=rabbitmq -n magento
+        echo "=== RabbitMQ Pod 状态 ==="
+        /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=rabbitmq
         
-        echo -e "\n=== RabbitMQ 服务信息 ==="
-        /usr/local/bin/k3s kubectl get svc rabbitmq -n magento
+        echo -e "\n=== RabbitMQ 服务状态 ==="
+        /usr/local/bin/k3s kubectl get svc -n {{ namespace }} -l app=rabbitmq
         
-        echo -e "\n=== RabbitMQ 版本信息 ==="
-        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -l app=rabbitmq -n magento -o jsonpath='{.items[0].metadata.name}')
-        echo "RabbitMQ 版本:"
-        /usr/local/bin/k3s kubectl exec $POD_NAME -n magento -- rabbitmqctl version
-        echo "Erlang 版本:"
-        /usr/local/bin/k3s kubectl exec $POD_NAME -n magento -- erl -eval 'erlang:display(erlang:system_info(version)), halt().' -noshell
-        
-        echo -e "\n=== RabbitMQ 访问方式 ==="
-        echo "AMQP 端口: 30672"
-        echo "管理界面: http://服务器IP:31672"
-        echo "用户名/密码: admin/admin123"
-      register: access_info
+        echo -e "\n=== RabbitMQ 访问地址 ==="
+        NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+        echo "AMQP: amqp://$NODE_IP:30672"
+        echo "管理界面: http://$NODE_IP:31672"
+        echo "默认用户名/密码: guest/guest"
+      register: status_result
 
-    - name: 显示访问信息
+    - name: 显示部署结果
       debug:
-        msg: "{{ access_info.stdout_lines | default([]) }}" 
+        msg: 
+          - "{{ deploy_result.stdout_lines | default([]) }}"
+          - "{{ wait_result.stdout_lines | default([]) }}"
+          - "{{ status_result.stdout_lines | default([]) }}" 
