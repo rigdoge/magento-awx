@@ -1,0 +1,52 @@
+---
+- name: 安装 K3s
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 安装必要的系统工具
+      shell: |
+        if command -v apt-get >/dev/null 2>&1; then
+          apt-get update && apt-get install -y curl procps
+        elif command -v yum >/dev/null 2>&1; then
+          yum install -y curl procps
+        fi
+      ignore_errors: yes
+
+    - name: 下载并安装 K3s
+      shell: |
+        curl -sfL https://get.k3s.io | sh -
+      args:
+        creates: /usr/local/bin/k3s
+      register: k3s_install
+
+    - name: 等待 K3s 启动
+      shell: |
+        for i in {1..30}; do
+          if systemctl is-active --quiet k3s; then
+            echo "K3s 已启动"
+            exit 0
+          fi
+          echo "等待 K3s 启动... $i"
+          sleep 2
+        done
+        echo "K3s 启动超时"
+        exit 1
+      register: k3s_wait
+      ignore_errors: yes
+
+    - name: 检查 K3s 状态
+      shell: |
+        echo "=== K3s 版本 ==="
+        k3s --version || true
+        
+        echo -e "\n=== K3s 服务状态 ==="
+        systemctl status k3s || true
+        
+        echo -e "\n=== K3s 节点状态 ==="
+        k3s kubectl get nodes || true
+      register: k3s_status
+      ignore_errors: yes
+
+    - name: 显示 K3s 状态
+      debug:
+        msg: "{{ k3s_status.stdout_lines | default([]) }}" 
