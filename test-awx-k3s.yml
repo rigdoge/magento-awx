@@ -3,18 +3,20 @@
   hosts: all
   gather_facts: no
   tasks:
-    - name: 检查 SSH 连接和用户权限
+    - name: 检查基本连接
       shell: |
         echo "=== SSH 连接用户 ==="
         whoami
-        echo "当前用户: $USER"
+        id
         
         echo -e "\n=== 系统信息 ==="
         uname -a
         
-        echo -e "\n=== K3s 文件权限 ==="
-        ls -l /usr/local/bin/k3s
-        ls -l /etc/rancher/k3s/k3s.yaml
+        echo -e "\n=== 当前目录 ==="
+        pwd
+        
+        echo -e "\n=== 环境变量 ==="
+        env | grep -i user
       register: system_info
 
     - name: 显示系统信息
