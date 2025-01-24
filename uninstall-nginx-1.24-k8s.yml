@@ -2,12 +2,11 @@
 - name: 从 K3s 中卸载 Nginx 1.24
   hosts: all
   gather_facts: no
-  become: yes
   tasks:
     - name: 获取当前 Nginx 状态
       shell: |
         echo "=== 当前 Nginx 资源 ==="
-        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get all,ingress -l app=nginx
+        kubectl get all,ingress -l app=nginx
       register: nginx_status
       ignore_errors: yes
 
@@ -17,16 +16,16 @@
 
     - name: 删除 Nginx 资源
       shell: |
-        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml delete ingress nginx-ingress
-        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml delete service nginx-service
-        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml delete deployment nginx-deployment
+        kubectl delete ingress nginx-ingress
+        kubectl delete service nginx-service
+        kubectl delete deployment nginx-deployment
       register: uninstall_result
       ignore_errors: yes
 
     - name: 确认删除结果
       shell: |
         echo "=== 检查剩余资源 ==="
-        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get all,ingress -l app=nginx
+        kubectl get all,ingress -l app=nginx
       register: check_result
       ignore_errors: yes
 
