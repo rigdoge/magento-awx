@@ -7,6 +7,24 @@
     use_nodeport: "{{ nodeport | default('30900') }}"
 
   tasks:
+    - name: 创建命名空间
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          echo "=== 创建命名空间 {{ use_namespace }} ==="
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+          
+          echo "等待命名空间就绪..."
+          for i in $(seq 1 10); do
+            if /usr/local/bin/k3s kubectl get namespace {{ use_namespace }} &>/dev/null; then
+              echo "命名空间 {{ use_namespace }} 已就绪"
+              break
+            fi
+            echo "等待命名空间... $i/10"
+            sleep 2
+          done
+        fi
+      register: namespace_result
+
     - name: 创建 PHP-FPM 配置
       copy:
         dest: /tmp/php-fpm.yaml
@@ -127,24 +145,6 @@
               name: fpm
             selector:
               app: php-fpm
-
-    - name: 创建命名空间
-      shell: |
-        if [ "{{ use_namespace }}" != "default" ]; then
-          echo "=== 创建命名空间 {{ use_namespace }} ==="
-          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
-          
-          echo "等待命名空间就绪..."
-          for i in $(seq 1 10); do
-            if /usr/local/bin/k3s kubectl get namespace {{ use_namespace }} &>/dev/null; then
-              echo "命名空间 {{ use_namespace }} 已就绪"
-              break
-            fi
-            echo "等待命名空间... $i/10"
-            sleep 2
-          done
-        fi
-      register: namespace_result
 
     - name: 清理旧的部署
       shell: |
