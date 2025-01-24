@@ -16,7 +16,9 @@
           kind: Deployment
           metadata:
             name: percona
-            namespace: "{{ namespace }}"
+            namespace: {{ namespace }}
+            labels:
+              app: percona
           spec:
             replicas: 1
             selector:
@@ -34,19 +36,19 @@
                   - containerPort: 3306
                   env:
                   - name: MYSQL_ROOT_PASSWORD
-                    value: "magento"
+                    value: "magento123"
                   resources:
-                    limits:
-                      cpu: "2"
-                      memory: "4Gi"
                     requests:
-                      cpu: "1"
+                      memory: "1Gi"
+                      cpu: "500m"
+                    limits:
                       memory: "2Gi"
+                      cpu: "1000m"
                   volumeMounts:
-                  - name: mysql-data
+                  - name: mysql-persistent-storage
                     mountPath: /var/lib/mysql
                 volumes:
-                - name: mysql-data
+                - name: mysql-persistent-storage
                   hostPath:
                     path: /data/percona
                     type: DirectoryOrCreate
@@ -55,15 +57,17 @@
           kind: Service
           metadata:
             name: percona
-            namespace: "{{ namespace }}"
-          spec:
-            selector:
+            namespace: {{ namespace }}
+            labels:
               app: percona
+          spec:
+            type: NodePort
             ports:
             - port: 3306
               targetPort: 3306
-              nodePort: 30306
-            type: NodePort
+              nodePort: 30307
+            selector:
+              app: percona
 
     - name: 清理旧部署
       shell: |
@@ -74,32 +78,24 @@
     - name: 部署 Percona
       shell: |
         /usr/local/bin/k3s kubectl apply -f /tmp/percona.yaml
-      register: deploy_result
-
-    - name: 等待 Percona Pod 就绪
-      shell: |
+        
+        echo "等待 Percona Pod 就绪..."
         for i in {1..30}; do
           if /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=percona -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
             echo "Percona Pod 已就绪"
             break
           fi
-          echo "等待 Percona Pod 就绪... $i"
-          sleep 3
+          echo "等待中... $i"
+          sleep 5
         done
-      register: wait_result
-
-    - name: 显示 Percona 状态
-      shell: |
-        echo "=== Percona Pod 状态 ==="
-        /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=percona
         
-        echo -e "\n=== Percona 服务状态 ==="
+        echo -e "\n=== Percona 部署状态 ==="
+        echo "Pod 状态:"
+        /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=percona
+        echo -e "\nService 状态:"
         /usr/local/bin/k3s kubectl get svc -n {{ namespace }} -l app=percona
-      register: status_result
+      register: deploy_result
 
     - name: 显示部署结果
       debug:
-        msg: 
-          - "{{ deploy_result.stdout_lines | default([]) }}"
-          - "{{ wait_result.stdout_lines | default([]) }}"
-          - "{{ status_result.stdout_lines | default([]) }}" 
+        msg: "{{ deploy_result.stdout_lines }}" 
