@@ -1,0 +1,109 @@
+---
+- name: 安装 Percona Server 8.0
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 创建 Percona 配置
+      copy:
+        dest: /tmp/percona.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: percona
+            labels:
+              app: percona
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: percona
+            template:
+              metadata:
+                labels:
+                  app: percona
+              spec:
+                containers:
+                - name: percona
+                  image: percona:8.0
+                  env:
+                  - name: MYSQL_ROOT_PASSWORD
+                    value: "root123"
+                  - name: MYSQL_USER
+                    value: "magento"
+                  - name: MYSQL_PASSWORD
+                    value: "magento123"
+                  - name: MYSQL_DATABASE
+                    value: "magento"
+                  ports:
+                  - containerPort: 3306
+                    name: mysql
+                  resources:
+                    limits:
+                      cpu: "2"
+                      memory: "4Gi"
+                    requests:
+                      cpu: "1"
+                      memory: "2Gi"
+                  volumeMounts:
+                  - name: mysql-data
+                    mountPath: /var/lib/mysql
+                volumes:
+                - name: mysql-data
+                  hostPath:
+                    path: /data/percona
+                    type: DirectoryOrCreate
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: percona
+          spec:
+            type: NodePort
+            ports:
+            - port: 3306
+              targetPort: 3306
+              nodePort: 30306
+              name: mysql
+            selector:
+              app: percona
+
+    - name: 清理旧部署
+      shell: |
+        /usr/local/bin/k3s kubectl delete -f /tmp/percona.yaml || true
+        sleep 5
+
+    - name: 部署 Percona
+      shell: /usr/local/bin/k3s kubectl apply -f /tmp/percona.yaml
+      register: deploy_result
+
+    - name: 等待 Pod 就绪
+      shell: |
+        echo "等待 Pod 就绪..."
+        /usr/local/bin/k3s kubectl wait --for=condition=ready pod -l app=percona --timeout=300s
+      register: wait_result
+
+    - name: 显示 Percona 访问信息
+      shell: |
+        echo "=== Percona 部署状态 ==="
+        /usr/local/bin/k3s kubectl get pods -l app=percona
+        
+        echo -e "\n=== Percona 服务信息 ==="
+        /usr/local/bin/k3s kubectl get svc percona
+        
+        echo -e "\n=== Percona 版本信息 ==="
+        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -l app=percona -o jsonpath='{.items[0].metadata.name}')
+        /usr/local/bin/k3s kubectl exec $POD_NAME -- mysql -V
+        
+        echo -e "\n=== Percona 访问方式 ==="
+        echo "端口: 30306"
+        echo "root 密码: root123"
+        echo "数据库: magento"
+        echo "用户名: magento"
+        echo "密码: magento123"
+        echo "数据目录: /data/percona"
+      register: access_info
+
+    - name: 显示访问信息
+      debug:
+        msg: "{{ access_info.stdout_lines | default([]) }}" 
