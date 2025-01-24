@@ -6,6 +6,13 @@
     use_namespace: "{{ namespace | default('default') }}"
 
   tasks:
+    - name: 创建命名空间
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+      register: namespace_result
+
     - name: 创建 PHP-FPM 配置
       copy:
         dest: /tmp/php-fpm.yaml
@@ -64,9 +71,6 @@
 
     - name: 部署 PHP-FPM
       shell: |
-        if [ "{{ use_namespace }}" != "default" ]; then
-          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
-        fi
         /usr/local/bin/k3s kubectl apply -f /tmp/php-fpm.yaml
       register: deploy_result
 
@@ -105,6 +109,7 @@
     - name: 显示部署结果
       debug:
         msg: 
+          - "命名空间创建结果: {{ namespace_result.stdout_lines | default([]) }}"
           - "清理结果: {{ cleanup_result.stdout_lines | default([]) }}"
           - "部署结果: {{ deploy_result.stdout_lines | default([]) }}"
           - "等待结果: {{ wait_result.stdout_lines | default([]) }}" 
