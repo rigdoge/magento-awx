@@ -45,13 +45,6 @@
                     value: "rabbit@localhost"
                   - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
                     value: "-rabbit tcp_listeners [{\"0.0.0.0\", 5672}] -rabbit loopback_users []"
-                  resources:
-                    requests:
-                      memory: "256Mi"
-                      cpu: "200m"
-                    limits:
-                      memory: "512Mi"
-                      cpu: "500m"
                   readinessProbe:
                     tcpSocket:
                       port: 5672
