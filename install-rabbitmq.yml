@@ -84,27 +84,47 @@
 
     - name: 清理旧的部署
       shell: |
+        echo "=== 清理旧的部署 ==="
         /usr/local/bin/k3s kubectl delete -f /tmp/rabbitmq.yaml || true
+        echo "等待资源清理完成..."
         sleep 5
       register: cleanup_result
 
     - name: 部署 RabbitMQ
       shell: |
+        echo "=== 开始部署 RabbitMQ ==="
         /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
         
-        echo "等待 RabbitMQ Pod 就绪..."
-        for i in {1..60}; do
-          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
+        echo "=== 等待 RabbitMQ Pod 就绪 ==="
+        MAX_RETRIES=60
+        RETRY_COUNT=0
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+          
+          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
+          if [ "$POD_STATUS" = "Running" ]; then
             echo "RabbitMQ Pod 已就绪"
             break
           fi
-          echo "等待中... $i"
+          
+          echo "等待中... $RETRY_COUNT/$MAX_RETRIES"
+          echo "当前状态: $POD_STATUS"
+          /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq
           sleep 5
         done
         
+        if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+          echo "错误: RabbitMQ Pod 未能在预期时间内就绪"
+          exit 1
+        fi
+        
         echo -e "\n=== RabbitMQ 部署状态 ==="
         echo "Pod 状态:"
-        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq
+        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o wide
+        
+        echo -e "\nPod 详细信息:"
+        /usr/local/bin/k3s kubectl describe pods -n {{ use_namespace }} -l app=rabbitmq
+        
         echo -e "\nService 状态:"
         /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=rabbitmq
         
