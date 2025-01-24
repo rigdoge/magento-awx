@@ -4,7 +4,7 @@
   gather_facts: no
   vars:
     use_namespace: "{{ namespace | default('default') }}"
-    use_nodeport: {{ nodeport | default(30672) }}
+    use_nodeport: "{{ nodeport | default(30672) }}"
 
   tasks:
     - name: 创建 RabbitMQ 配置
