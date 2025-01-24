@@ -35,6 +35,11 @@
                     value: "magento123"
                   - name: MYSQL_DATABASE
                     value: "magento"
+                  args:
+                  - --character-set-server=utf8mb4
+                  - --collation-server=utf8mb4_unicode_ci
+                  - --skip-name-resolve
+                  - --skip-host-cache
                   ports:
                   - containerPort: 3306
                     name: mysql
@@ -45,6 +50,19 @@
                     requests:
                       cpu: "1"
                       memory: "2Gi"
+                  readinessProbe:
+                    exec:
+                      command:
+                      - mysqladmin
+                      - ping
+                      - -h
+                      - localhost
+                      - -u
+                      - root
+                      - -p$MYSQL_ROOT_PASSWORD
+                    initialDelaySeconds: 5
+                    periodSeconds: 2
+                    timeoutSeconds: 1
                   volumeMounts:
                   - name: mysql-data
                     mountPath: /var/lib/mysql
