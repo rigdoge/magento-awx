@@ -2,6 +2,9 @@
 - name: 安装 Nginx 1.24
   hosts: all
   gather_facts: no
+  vars:
+    default_namespace: default
+    default_nodeport: "30180"
   tasks:
     - name: 设置变量
       set_fact:
@@ -16,7 +19,7 @@
           kind: Deployment
           metadata:
             name: nginx
-            namespace: {{ use_namespace }}
+            namespace: "{{ use_namespace }}"
             labels:
               app: nginx
           spec:
@@ -34,22 +37,20 @@
                   image: nginx:1.24
                   ports:
                   - containerPort: 80
-                  resources:
-                    requests:
-                      memory: "128Mi"
-                      cpu: "100m"
-                    limits:
-                      memory: "256Mi"
-                      cpu: "200m"
                   readinessProbe:
                     httpGet:
                       path: /
                       port: 80
                     initialDelaySeconds: 5
                     periodSeconds: 5
-                  volumeMounts:
-                  - name: nginx-conf
-                    mountPath: /etc/nginx/conf.d
+                    timeoutSeconds: 3
+                  livenessProbe:
+                    httpGet:
+                      path: /
+                      port: 80
+                    initialDelaySeconds: 15
+                    periodSeconds: 10
+                    timeoutSeconds: 3
                 volumes:
                 - name: nginx-conf
                   emptyDir: {}
@@ -58,7 +59,7 @@
           kind: Service
           metadata:
             name: nginx
-            namespace: {{ use_namespace }}
+            namespace: "{{ use_namespace }}"
             labels:
               app: nginx
           spec:
@@ -72,29 +73,78 @@
 
     - name: 清理旧的部署
       shell: |
+        echo "=== 清理旧的部署 ==="
         /usr/local/bin/k3s kubectl delete -f /tmp/nginx.yaml || true
+        echo "等待资源清理完成..."
         sleep 5
       register: cleanup_result
 
     - name: 部署 Nginx
       shell: |
+        echo "=== 开始部署 Nginx ==="
         /usr/local/bin/k3s kubectl apply -f /tmp/nginx.yaml
         
-        echo "等待 Nginx Pod 就绪..."
-        for i in {1..30}; do
-          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=nginx -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
-            echo "Nginx Pod 已就绪"
-            break
+        echo "=== 等待 Nginx Pod 就绪 ==="
+        MAX_RETRIES=30
+        RETRY_COUNT=0
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+          
+          echo -e "\n--- 检查周期 $RETRY_COUNT/$MAX_RETRIES ---"
+          
+          # 检查 Pod 状态
+          echo "Pod 状态:"
+          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=nginx -o wide)
+          echo "$POD_STATUS"
+          
+          # 检查事件
+          echo -e "\n最近事件:"
+          /usr/local/bin/k3s kubectl get events -n "{{ use_namespace }}" --sort-by='.lastTimestamp' | tail -n 5
+          
+          # 检查 Pod 是否在运行
+          RUNNING_STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=nginx -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
+          echo -e "\n运行状态: $RUNNING_STATUS"
+          
+          # 如果 Pod 在运行，检查就绪状态
+          if [ "$RUNNING_STATUS" = "Running" ]; then
+            READY_STATUS=$(/usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=nginx -o jsonpath='{.items[0].status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+            echo "就绪状态: $READY_STATUS"
+            
+            if [ "$READY_STATUS" = "true" ]; then
+              echo "Nginx Pod 已就绪"
+              break
+            fi
+            
+            # 显示容器日志
+            echo -e "\n最新日志:"
+            /usr/local/bin/k3s kubectl logs -n "{{ use_namespace }}" -l app=nginx --tail=10
           fi
-          echo "等待中... $i"
+          
+          # 如果 Pod 不在运行，显示详细信息
+          if [ "$RUNNING_STATUS" != "Running" ]; then
+            echo -e "\nPod 详细信息:"
+            /usr/local/bin/k3s kubectl describe pods -n "{{ use_namespace }}" -l app=nginx
+          fi
+          
           sleep 5
         done
         
+        if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+          echo "错误: Nginx Pod 未能在预期时间内就绪"
+          echo -e "\n=== 最终状态 ==="
+          echo "Pod 详细信息:"
+          /usr/local/bin/k3s kubectl describe pods -n "{{ use_namespace }}" -l app=nginx
+          echo -e "\n最新日志:"
+          /usr/local/bin/k3s kubectl logs -n "{{ use_namespace }}" -l app=nginx --tail=50
+          exit 1
+        fi
+        
         echo -e "\n=== Nginx 部署状态 ==="
         echo "Pod 状态:"
-        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=nginx
+        /usr/local/bin/k3s kubectl get pods -n "{{ use_namespace }}" -l app=nginx -o wide
+        
         echo -e "\nService 状态:"
-        /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=nginx
+        /usr/local/bin/k3s kubectl get svc -n "{{ use_namespace }}" -l app=nginx
         
         echo -e "\n=== 访问地址 ==="
         NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
