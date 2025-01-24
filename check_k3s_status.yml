@@ -2,38 +2,67 @@
 - name: 检查 K3s 状态
   hosts: all
   tasks:
-    - name: 检查 K3s 服务状态
+    - name: 检查系统环境
       shell: |
-        echo "=== K3s 服务状态 ==="
-        systemctl status k3s || true
+        echo "=== 系统信息 ==="
+        uname -a
+        ps -ef | grep -i k3s || true
         
-        echo "=== K3s 日志 ==="
-        journalctl -u k3s --no-pager -n 50 || true
+        echo "=== 进程状态 ==="
+        ps aux | grep -i k3s || true
         
-        echo "=== 节点状态 ==="
-        kubectl get nodes -o wide || true
+        echo "=== K3s 二进制 ==="
+        if [ -f /usr/local/bin/k3s ]; then
+          /usr/local/bin/k3s --version || true
+        else
+          echo "K3s 未安装"
+        fi
         
-        echo "=== Pod 状态 ==="
-        kubectl get pods -A || true
+        echo "=== K3s 配置文件 ==="
+        ls -l /etc/rancher/k3s/ || true
         
-        echo "=== 系统资源 ==="
-        free -h
-        df -h /var/lib/rancher/k3s
-      register: k3s_status
-      changed_when: false
-
-    - name: 显示 K3s 状态
-      debug:
-        msg: "{{ k3s_status.stdout_lines }}"
-
-    - name: 检查 K3s 配置
-      shell: |
-        echo "=== K3s 配置 ==="
-        cat /etc/rancher/k3s/config.yaml || true
-      register: k3s_config
+        echo "=== 存储状态 ==="
+        df -h / || true
+        
+        echo "=== 网络状态 ==="
+        netstat -nltp || true
+        
+        echo "=== 系统日志 ==="
+        tail -n 50 /var/log/syslog || tail -n 50 /var/log/messages || true
+      register: system_status
       changed_when: false
       ignore_errors: yes
 
-    - name: 显示 K3s 配置
+    - name: 显示系统状态
       debug:
-        msg: "{{ k3s_config.stdout_lines }}" 
+        msg: "{{ system_status.stdout_lines }}"
+
+    - name: 检查 K3s 文件
+      stat:
+        path: "{{ item }}"
+      loop:
+        - /usr/local/bin/k3s
+        - /etc/rancher/k3s/k3s.yaml
+        - /var/lib/rancher/k3s
+      register: k3s_files
+      ignore_errors: yes
+
+    - name: 显示 K3s 文件状态
+      debug:
+        msg: |
+          K3s 文件检查结果：
+          {% for item in k3s_files.results %}
+          - {{ item.item }}: {{ '存在' if item.stat.exists|default(false) else '不存在' }}
+          {% endfor %}
+
+    - name: 检查网络端口
+      shell: |
+        echo "=== 监听端口 ==="
+        netstat -nltp 2>/dev/null || ss -nltp 2>/dev/null || true
+      register: port_status
+      changed_when: false
+      ignore_errors: yes
+
+    - name: 显示端口状态
+      debug:
+        msg: "{{ port_status.stdout_lines }}" 
