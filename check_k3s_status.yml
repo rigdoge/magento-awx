@@ -1,32 +1,17 @@
 ---
 - name: 检查 K3s 状态
   hosts: all
-  connection: local
+  become: yes
   gather_facts: no
   tasks:
     - name: 检查 K3s 状态
       shell: |
         echo "=== K3s 进程状态 ==="
-        ps aux | grep k3s | grep -v grep || true
-        
-        echo "=== K3s 二进制文件 ==="
-        ls -l /usr/local/bin/k3s || true
-        
-        echo "=== K3s 配置目录 ==="
-        ls -la /etc/rancher/k3s/ || true
-        
-        echo "=== K3s 数据目录 ==="
-        ls -la /var/lib/rancher/k3s/ || true
+        ps aux | grep k3s | grep -v grep
         
         echo "=== K3s 服务状态 ==="
-        ps aux | grep k3s-server || true
-        
-        echo "=== K3s 端口状态 ==="
-        netstat -ntlp | grep k3s || true
-      args:
-        executable: /bin/bash
+        systemctl status k3s
       register: k3s_status
-      changed_when: false
       ignore_errors: yes
 
     - name: 显示 K3s 状态
