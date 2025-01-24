@@ -6,10 +6,6 @@
     use_namespace: "{{ namespace | default('default') }}"
 
   tasks:
-    - name: 设置变量
-      set_fact:
-        use_namespace: "{{ namespace | default('default') }}"
-
     - name: 创建命名空间
       shell: |
         /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
