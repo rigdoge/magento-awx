@@ -12,19 +12,20 @@
         echo -e "\n=== 系统信息 ==="
         uname -a
         
-        echo -e "\n=== K3s 状态 ==="
-        systemctl status k3s || echo "无法获取 K3s 状态"
-        
         echo -e "\n=== K3s 文件权限 ==="
         ls -l /usr/local/bin/k3s
         ls -l /etc/rancher/k3s/k3s.yaml
-        
-        echo -e "\n=== 测试 K3s 命令 ==="
-        /usr/local/bin/k3s kubectl get nodes
       register: system_info
-      become: yes
-      become_user: doge
 
     - name: 显示系统信息
       debug:
-        msg: "{{ system_info.stdout_lines | default([]) }}" 
+        msg: "{{ system_info.stdout_lines | default([]) }}"
+
+    - name: 测试 K3s 命令
+      shell: /usr/local/bin/k3s kubectl get nodes
+      become: yes
+      register: k3s_info
+
+    - name: 显示 K3s 信息
+      debug:
+        msg: "{{ k3s_info.stdout_lines | default([]) }}" 
