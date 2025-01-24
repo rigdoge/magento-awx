@@ -1,0 +1,110 @@
+---
+- name: 安装 PHP-FPM 8.2
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('default') }}"
+
+  tasks:
+    - name: 创建 PHP-FPM 配置
+      copy:
+        dest: /tmp/php-fpm.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: php-fpm
+            namespace: {{ use_namespace }}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: php-fpm
+            template:
+              metadata:
+                labels:
+                  app: php-fpm
+              spec:
+                containers:
+                - name: php-fpm
+                  image: php:8.2-fpm
+                  ports:
+                  - containerPort: 9000
+                    name: fpm
+                  readinessProbe:
+                    tcpSocket:
+                      port: 9000
+                    initialDelaySeconds: 10
+                    periodSeconds: 10
+                  livenessProbe:
+                    tcpSocket:
+                      port: 9000
+                    initialDelaySeconds: 60
+                    periodSeconds: 20
+                    timeoutSeconds: 5
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: php-fpm
+            namespace: {{ use_namespace }}
+          spec:
+            selector:
+              app: php-fpm
+            ports:
+            - port: 9000
+              targetPort: 9000
+              name: fpm
+
+    - name: 清理旧的部署
+      shell: |
+        /usr/local/bin/k3s kubectl delete -f /tmp/php-fpm.yaml || true
+        sleep 5
+      register: cleanup_result
+
+    - name: 部署 PHP-FPM
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+        /usr/local/bin/k3s kubectl apply -f /tmp/php-fpm.yaml
+      register: deploy_result
+
+    - name: 等待 Pod 就绪
+      shell: |
+        echo "等待 PHP-FPM Pod 就绪..."
+        attempt=1
+        max_attempts=30
+        while [ $attempt -le $max_attempts ]; do
+          echo "检查 #$attempt..."
+          
+          # 获取 Pod 状态
+          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.phase}')
+          if [ "$POD_STATUS" = "Running" ]; then
+            # 检查就绪状态
+            READY_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+            if [ "$READY_STATUS" = "true" ]; then
+              echo "PHP-FPM Pod 已就绪!"
+              exit 0
+            fi
+          fi
+          
+          # 如果 Pod 不在运行或未就绪，显示详细信息
+          echo "Pod 状态: $POD_STATUS"
+          /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} -l app=php-fpm
+          /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} -l app=php-fpm
+          
+          attempt=$((attempt + 1))
+          sleep 10
+        done
+        
+        echo "等待超时，PHP-FPM Pod 未就绪"
+        exit 1
+      register: wait_result
+
+    - name: 显示部署结果
+      debug:
+        msg: 
+          - "清理结果: {{ cleanup_result.stdout_lines | default([]) }}"
+          - "部署结果: {{ deploy_result.stdout_lines | default([]) }}"
+          - "等待结果: {{ wait_result.stdout_lines | default([]) }}" 
