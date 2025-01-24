@@ -1,0 +1,36 @@
+---
+- name: 卸载所有 Magento 相关服务
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 删除所有服务
+      shell: |
+        echo "=== 删除 Percona ==="
+        /usr/local/bin/k3s kubectl delete deployment,svc percona -n magento || true
+        
+        echo -e "\n=== 删除 RabbitMQ ==="
+        /usr/local/bin/k3s kubectl delete deployment,svc rabbitmq -n magento || true
+        
+        echo -e "\n=== 删除 Nginx ==="
+        /usr/local/bin/k3s kubectl delete deployment,svc nginx -n magento || true
+        
+        echo -e "\n=== 等待 Pod 终止 ==="
+        for i in {1..10}; do
+          if ! /usr/local/bin/k3s kubectl get pods -n magento 2>/dev/null | grep -q .; then
+            echo "所有 Pod 已终止"
+            break
+          fi
+          echo "等待 Pod 终止... $i"
+          sleep 3
+        done
+        
+        echo -e "\n=== 删除命名空间 ==="
+        /usr/local/bin/k3s kubectl delete namespace magento || true
+        
+        echo -e "\n=== 清理数据目录 ==="
+        rm -rf /data/percona || true
+      register: uninstall_result
+
+    - name: 显示卸载结果
+      debug:
+        msg: "{{ uninstall_result.stdout_lines | default([]) }}" 
