@@ -22,15 +22,47 @@
           默认IPv4: {{ ansible_default_ipv4.address | default('Not set') }}
           DNS服务器: {{ ansible_dns.nameservers | join(', ') }}
 
-    - name: Check K3s status
-      shell: systemctl status k3s
-      register: k3s_status
-      ignore_errors: yes
+    - name: Check K3s status and version
+      shell: |
+        systemctl status k3s || true
+        kubectl version --short || true
+        kubectl get nodes -o wide || true
+      register: k3s_info
       changed_when: false
+      ignore_errors: yes
 
-    - name: Display K3s status
+    - name: Display K3s information
       debug:
-        msg: "K3s 状态: {{ 'Active' if k3s_status.rc == 0 else 'Inactive or not installed' }}"
+        msg: |
+          === K3s 信息 ===
+          {{ k3s_info.stdout_lines | join('\n') }}
+
+    - name: Check K3s storage classes
+      shell: kubectl get storageclass -o wide || true
+      register: storage_classes
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Display storage classes
+      debug:
+        msg: |
+          === 存储类信息 ===
+          {{ storage_classes.stdout_lines | join('\n') }}
+
+    - name: Check K3s networking
+      shell: |
+        kubectl get services -A || true
+        echo "---"
+        kubectl get ingress -A || true
+      register: k3s_network
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Display K3s networking
+      debug:
+        msg: |
+          === K3s 网络信息 ===
+          {{ k3s_network.stdout_lines | join('\n') }}
 
     - name: Check available ports
       shell: |
@@ -56,16 +88,21 @@
           === 存储信息 ===
           {{ storage_info.stdout_lines | join('\n') }}
 
-    - name: Check container runtime
-      shell: which docker containerd crio 2>/dev/null || true
-      register: container_runtime
+    - name: Check container runtime and images
+      shell: |
+        echo "=== 容器运行时 ==="
+        which docker containerd crio 2>/dev/null || true
+        echo "=== 现有镜像 ==="
+        crictl images 2>/dev/null || true
+        echo "=== 运行中容器 ==="
+        crictl ps 2>/dev/null || true
+      register: container_info
       changed_when: false
+      ignore_errors: yes
 
-    - name: Display container runtime
+    - name: Display container information
       debug:
-        msg: |
-          === 容器运行时 ===
-          已安装: {{ container_runtime.stdout_lines | join(', ') if container_runtime.stdout_lines else 'None' }}
+        msg: "{{ container_info.stdout }}"
 
     - name: Check required packages
       package_facts:
@@ -79,3 +116,17 @@
           Python3: {{ 'python3' in ansible_facts.packages | string }}
           curl: {{ 'curl' in ansible_facts.packages | string }}
           wget: {{ 'wget' in ansible_facts.packages | string }}
+
+    - name: Check SELinux/AppArmor status
+      shell: |
+        echo "=== SELinux 状态 ==="
+        getenforce 2>/dev/null || echo "SELinux not installed"
+        echo "=== AppArmor 状态 ==="
+        aa-status 2>/dev/null || echo "AppArmor not installed"
+      register: security_info
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Display security information
+      debug:
+        msg: "{{ security_info.stdout }}"
