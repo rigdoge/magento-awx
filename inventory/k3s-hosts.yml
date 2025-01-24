@@ -4,10 +4,7 @@ all:
     k3s:
       hosts:
         k3s-master:
-          ansible_connection: ssh
-          ansible_host: localhost
-          ansible_user: root
-          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_connection: local
       vars:
         ansible_become: yes
         ansible_become_method: sudo 
