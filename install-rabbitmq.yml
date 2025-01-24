@@ -3,6 +3,11 @@
   hosts: all
   gather_facts: no
   tasks:
+    - name: 创建命名空间
+      shell: |
+        /usr/local/bin/k3s kubectl create namespace magento || true
+      register: namespace_result
+
     - name: 创建 RabbitMQ 配置
       copy:
         dest: /tmp/rabbitmq.yaml
@@ -11,6 +16,7 @@
           kind: Deployment
           metadata:
             name: rabbitmq
+            namespace: magento
             labels:
               app: rabbitmq
           spec:
@@ -49,6 +55,7 @@
           kind: Service
           metadata:
             name: rabbitmq
+            namespace: magento
           spec:
             type: NodePort
             ports:
@@ -75,23 +82,23 @@
     - name: 等待 Pod 就绪
       shell: |
         echo "等待 Pod 就绪..."
-        /usr/local/bin/k3s kubectl wait --for=condition=ready pod -l app=rabbitmq --timeout=300s
+        /usr/local/bin/k3s kubectl wait --for=condition=ready pod -l app=rabbitmq -n magento --timeout=300s
       register: wait_result
 
     - name: 显示 RabbitMQ 访问信息
       shell: |
         echo "=== RabbitMQ 部署状态 ==="
-        /usr/local/bin/k3s kubectl get pods -l app=rabbitmq
+        /usr/local/bin/k3s kubectl get pods -l app=rabbitmq -n magento
         
         echo -e "\n=== RabbitMQ 服务信息 ==="
-        /usr/local/bin/k3s kubectl get svc rabbitmq
+        /usr/local/bin/k3s kubectl get svc rabbitmq -n magento
         
         echo -e "\n=== RabbitMQ 版本信息 ==="
-        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -l app=rabbitmq -o jsonpath='{.items[0].metadata.name}')
+        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -l app=rabbitmq -n magento -o jsonpath='{.items[0].metadata.name}')
         echo "RabbitMQ 版本:"
-        /usr/local/bin/k3s kubectl exec $POD_NAME -- rabbitmqctl version
+        /usr/local/bin/k3s kubectl exec $POD_NAME -n magento -- rabbitmqctl version
         echo "Erlang 版本:"
-        /usr/local/bin/k3s kubectl exec $POD_NAME -- erl -eval 'erlang:display(erlang:system_info(version)), halt().' -noshell
+        /usr/local/bin/k3s kubectl exec $POD_NAME -n magento -- erl -eval 'erlang:display(erlang:system_info(version)), halt().' -noshell
         
         echo -e "\n=== RabbitMQ 访问方式 ==="
         echo "AMQP 端口: 30672"

@@ -1,28 +1,29 @@
 ---
-- name: 在 K3s 中部署 Nginx
+- name: 安装 Nginx
   hosts: all
   gather_facts: no
   tasks:
-    - name: 清理旧的 Nginx 部署
+    - name: 创建命名空间
       shell: |
-        echo "=== 清理旧部署 ==="
-        /usr/local/bin/k3s kubectl delete -f /tmp/nginx.yaml || true
-        sleep 5
-      ignore_errors: yes
+        /usr/local/bin/k3s kubectl create namespace magento || true
+      register: namespace_result
 
     - name: 创建 Nginx 配置
       copy:
+        dest: /tmp/nginx.yaml
         content: |
           apiVersion: apps/v1
           kind: Deployment
           metadata:
             name: nginx
-            namespace: default
+            namespace: magento
+            labels:
+              app: nginx
           spec:
+            replicas: 1
             selector:
               matchLabels:
                 app: nginx
-            replicas: 1
             template:
               metadata:
                 labels:
@@ -33,62 +34,58 @@
                   image: nginx:1.24
                   ports:
                   - containerPort: 80
+                    name: http
                   resources:
-                    requests:
-                      memory: "64Mi"
-                      cpu: "100m"
                     limits:
-                      memory: "128Mi"
-                      cpu: "200m"
+                      cpu: "1"
+                      memory: "1Gi"
+                    requests:
+                      cpu: "0.5"
+                      memory: "512Mi"
           ---
           apiVersion: v1
           kind: Service
           metadata:
             name: nginx
-            namespace: default
+            namespace: magento
           spec:
             type: NodePort
             ports:
             - port: 80
               targetPort: 80
-              nodePort: 30180
+              nodePort: 30080
+              name: http
             selector:
               app: nginx
-        dest: /tmp/nginx.yaml
+
+    - name: 清理旧部署
+      shell: |
+        /usr/local/bin/k3s kubectl delete -f /tmp/nginx.yaml || true
+        sleep 5
 
     - name: 部署 Nginx
       shell: /usr/local/bin/k3s kubectl apply -f /tmp/nginx.yaml
       register: deploy_result
 
-    - name: 显示部署结果
-      debug:
-        msg: "{{ deploy_result.stdout_lines | default([]) }}"
-
-    - name: 等待 Nginx Pod 就绪
+    - name: 等待 Pod 就绪
       shell: |
-        for i in {1..30}; do
-          if /usr/local/bin/k3s kubectl get pods -l app=nginx | grep Running; then
-            echo "Nginx Pod 已就绪"
-            exit 0
-          fi
-          echo "等待 Nginx Pod 就绪... $i"
-          sleep 2
-        done
+        echo "等待 Pod 就绪..."
+        /usr/local/bin/k3s kubectl wait --for=condition=ready pod -l app=nginx -n magento --timeout=300s
       register: wait_result
 
-    - name: 获取 Nginx 访问信息
+    - name: 显示 Nginx 访问信息
       shell: |
-        echo "=== Nginx Pod 状态 ==="
-        /usr/local/bin/k3s kubectl get pods -l app=nginx
+        echo "=== Nginx 部署状态 ==="
+        /usr/local/bin/k3s kubectl get pods -l app=nginx -n magento
         
-        echo -e "\n=== Nginx Service 状态 ==="
-        /usr/local/bin/k3s kubectl get svc nginx
+        echo -e "\n=== Nginx 服务信息 ==="
+        /usr/local/bin/k3s kubectl get svc nginx -n magento
         
-        echo -e "\n=== Nginx 访问地址 ==="
-        NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
-        echo "http://$NODE_IP:30180"
-      register: nginx_info
+        echo -e "\n=== Nginx 版本信息 ==="
+        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -l app=nginx -n magento -o jsonpath='{.items[0].metadata.name}')
+        /usr/local/bin/k3s kubectl exec $POD_NAME -n magento -- nginx -v
+      register: access_info
 
-    - name: 显示 Nginx 信息
+    - name: 显示访问信息
       debug:
-        msg: "{{ nginx_info.stdout_lines | default([]) }}" 
+        msg: "{{ access_info.stdout_lines | default([]) }}" 
