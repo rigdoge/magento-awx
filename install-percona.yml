@@ -3,6 +3,11 @@
   hosts: all
   gather_facts: no
   tasks:
+    - name: 创建命名空间
+      shell: |
+        /usr/local/bin/k3s kubectl create namespace magento || true
+      register: namespace_result
+
     - name: 创建 Percona 配置
       copy:
         dest: /tmp/percona.yaml
@@ -11,6 +16,7 @@
           kind: Deployment
           metadata:
             name: percona
+            namespace: magento
             labels:
               app: percona
           spec:
@@ -76,6 +82,7 @@
           kind: Service
           metadata:
             name: percona
+            namespace: magento
           spec:
             type: NodePort
             ports:
@@ -98,20 +105,20 @@
     - name: 等待 Pod 就绪
       shell: |
         echo "等待 Pod 就绪..."
-        /usr/local/bin/k3s kubectl wait --for=condition=ready pod -l app=percona --timeout=300s
+        /usr/local/bin/k3s kubectl wait --for=condition=ready pod -l app=percona -n magento --timeout=300s
       register: wait_result
 
     - name: 显示 Percona 访问信息
       shell: |
         echo "=== Percona 部署状态 ==="
-        /usr/local/bin/k3s kubectl get pods -l app=percona
+        /usr/local/bin/k3s kubectl get pods -l app=percona -n magento
         
         echo -e "\n=== Percona 服务信息 ==="
-        /usr/local/bin/k3s kubectl get svc percona
+        /usr/local/bin/k3s kubectl get svc percona -n magento
         
         echo -e "\n=== Percona 版本信息 ==="
-        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -l app=percona -o jsonpath='{.items[0].metadata.name}')
-        /usr/local/bin/k3s kubectl exec $POD_NAME -- mysql -V
+        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -l app=percona -n magento -o jsonpath='{.items[0].metadata.name}')
+        /usr/local/bin/k3s kubectl exec $POD_NAME -n magento -- mysql -V
         
         echo -e "\n=== Percona 访问方式 ==="
         echo "端口: 30306"
