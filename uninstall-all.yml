@@ -1,36 +1,60 @@
 ---
-- name: 卸载所有 Magento 相关服务
+- name: 卸载所有服务
   hosts: all
   gather_facts: no
   tasks:
     - name: 删除所有服务
       shell: |
-        echo "=== 删除 Percona ==="
-        /usr/local/bin/k3s kubectl delete deployment,svc percona -n magento || true
+        echo "=== 开始清理所有服务 ==="
         
-        echo -e "\n=== 删除 RabbitMQ ==="
-        /usr/local/bin/k3s kubectl delete deployment,svc rabbitmq -n magento || true
+        # 定义要清理的服务列表
+        SERVICES="nginx php-fpm rabbitmq percona"
         
-        echo -e "\n=== 删除 Nginx ==="
-        /usr/local/bin/k3s kubectl delete deployment,svc nginx -n magento || true
+        # 遍历所有命名空间
+        for ns in $(/usr/local/bin/k3s kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
+          echo "检查命名空间: $ns"
+          
+          # 遍历所有服务
+          for svc in $SERVICES; do
+            echo "清理服务: $svc"
+            # 删除 deployment
+            /usr/local/bin/k3s kubectl delete deployment $svc -n $ns --force --grace-period=0 2>/dev/null || true
+            # 删除 service
+            /usr/local/bin/k3s kubectl delete service $svc -n $ns --force --grace-period=0 2>/dev/null || true
+            # 删除 configmap
+            /usr/local/bin/k3s kubectl delete configmap $svc -n $ns --force --grace-period=0 2>/dev/null || true
+            # 删除 pvc 和 pv
+            /usr/local/bin/k3s kubectl delete pvc,pv -l app=$svc -n $ns --force --grace-period=0 2>/dev/null || true
+          done
+        done
         
-        echo -e "\n=== 等待 Pod 终止 ==="
+        echo -e "\n=== 等待资源终止 ==="
         for i in {1..10}; do
-          if ! /usr/local/bin/k3s kubectl get pods -n magento 2>/dev/null | grep -q .; then
+          RUNNING_PODS=$(/usr/local/bin/k3s kubectl get pods --all-namespaces | grep -E "nginx|php-fpm|rabbitmq|percona" || true)
+          if [ -z "$RUNNING_PODS" ]; then
             echo "所有 Pod 已终止"
             break
           fi
           echo "等待 Pod 终止... $i"
+          echo "仍在运行的 Pod:"
+          echo "$RUNNING_PODS"
           sleep 3
         done
         
-        echo -e "\n=== 删除命名空间 ==="
-        /usr/local/bin/k3s kubectl delete namespace magento || true
-        
         echo -e "\n=== 清理数据目录 ==="
         rm -rf /data/percona || true
+        rm -rf /data/rabbitmq || true
+        rm -rf /data/nginx || true
+        rm -rf /data/php-fpm || true
+        
+        echo -e "\n=== 验证清理结果 ==="
+        echo "检查所有命名空间中的服务:"
+        /usr/local/bin/k3s kubectl get all --all-namespaces | grep -E "nginx|php-fpm|rabbitmq|percona" || echo "没有找到相关服务"
+        
+        echo -e "\n=== 检查端口占用 ==="
+        /usr/local/bin/k3s kubectl get svc --all-namespaces | grep -E "30180|30672|31672|30306|9000" || echo "没有服务使用相关端口"
       register: uninstall_result
 
     - name: 显示卸载结果
       debug:
-        msg: "{{ uninstall_result.stdout_lines | default([]) }}" 
+        msg: "{{ uninstall_result.stdout_lines }}" 
