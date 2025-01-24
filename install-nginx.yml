@@ -3,6 +3,11 @@
   hosts: all
   gather_facts: no
   tasks:
+    - name: 创建命名空间
+      shell: |
+        /usr/local/bin/k3s kubectl create namespace {{ namespace }} || true
+      register: namespace_result
+
     - name: 创建 Nginx 配置
       copy:
         dest: /tmp/nginx.yaml
@@ -11,7 +16,9 @@
           kind: Deployment
           metadata:
             name: nginx
-            namespace: "{{ namespace }}"
+            namespace: {{ namespace }}
+            labels:
+              app: nginx
           spec:
             replicas: 1
             selector:
@@ -25,21 +32,21 @@
                 containers:
                 - name: nginx
                   image: nginx:1.24
+                  ports:
+                  - containerPort: 80
                   resources:
-                    limits:
-                      cpu: "1"
-                      memory: "1Gi"
                     requests:
-                      cpu: "500m"
-                      memory: "512Mi"
+                      memory: "128Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "256Mi"
+                      cpu: "200m"
                   readinessProbe:
                     httpGet:
                       path: /
                       port: 80
                     initialDelaySeconds: 5
-                    periodSeconds: 10
-                  ports:
-                  - containerPort: 80
+                    periodSeconds: 5
                   volumeMounts:
                   - name: nginx-conf
                     mountPath: /etc/nginx/conf.d
@@ -51,15 +58,17 @@
           kind: Service
           metadata:
             name: nginx
-            namespace: "{{ namespace }}"
-          spec:
-            selector:
+            namespace: {{ namespace }}
+            labels:
               app: nginx
+          spec:
+            type: NodePort
             ports:
             - port: 80
               targetPort: 80
-              nodePort: 30080
-            type: NodePort
+              nodePort: 30180
+            selector:
+              app: nginx
 
     - name: 清理旧的部署
       shell: |
@@ -70,36 +79,24 @@
     - name: 部署 Nginx
       shell: |
         /usr/local/bin/k3s kubectl apply -f /tmp/nginx.yaml
-      register: deploy_result
-
-    - name: 等待 Nginx Pod 就绪
-      shell: |
+        
+        echo "等待 Nginx Pod 就绪..."
         for i in {1..30}; do
           if /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=nginx -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
             echo "Nginx Pod 已就绪"
             break
           fi
-          echo "等待 Nginx Pod 就绪... $i"
-          sleep 3
+          echo "等待中... $i"
+          sleep 5
         done
-      register: wait_result
-
-    - name: 显示 Nginx 状态
-      shell: |
-        echo "=== Nginx Pod 状态 ==="
+        
+        echo -e "\n=== Nginx 部署状态 ==="
+        echo "Pod 状态:"
         /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=nginx
-        
-        echo -e "\n=== Nginx 服务状态 ==="
+        echo -e "\nService 状态:"
         /usr/local/bin/k3s kubectl get svc -n {{ namespace }} -l app=nginx
-        
-        echo -e "\n=== Nginx 访问地址 ==="
-        NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
-        echo "http://$NODE_IP:30080"
-      register: status_result
+      register: deploy_result
 
     - name: 显示部署结果
       debug:
-        msg: 
-          - "{{ deploy_result.stdout_lines | default([]) }}"
-          - "{{ wait_result.stdout_lines | default([]) }}"
-          - "{{ status_result.stdout_lines | default([]) }}" 
+        msg: "{{ deploy_result.stdout_lines }}" 
