@@ -17,17 +17,11 @@
         
         echo -e "\n=== 环境变量 ==="
         env | grep -i user
+        
+        echo -e "\n=== 测试 K3s 命令 ==="
+        /usr/local/bin/k3s kubectl get nodes || echo "无法执行 K3s 命令"
       register: system_info
 
     - name: 显示系统信息
       debug:
-        msg: "{{ system_info.stdout_lines | default([]) }}"
-
-    - name: 测试 K3s 命令
-      shell: /usr/local/bin/k3s kubectl get nodes
-      become: yes
-      register: k3s_info
-
-    - name: 显示 K3s 信息
-      debug:
-        msg: "{{ k3s_info.stdout_lines | default([]) }}" 
+        msg: "{{ system_info.stdout_lines | default([]) }}" 
