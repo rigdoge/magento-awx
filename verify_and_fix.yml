@@ -1,0 +1,150 @@
+---
+- name: 验证环境并修正问题
+  hosts: all
+  tasks:
+    - name: 检查 K3s 安装
+      shell: |
+        if [ -f /usr/local/bin/k3s ]; then
+          echo "K3s 已安装"
+          /usr/local/bin/k3s --version
+          systemctl status k3s || true
+        else
+          echo "K3s 未安装"
+        fi
+      register: k3s_check
+      changed_when: false
+
+    - name: 显示 K3s 状态
+      debug:
+        msg: "{{ k3s_check.stdout_lines }}"
+
+    - name: 检查必要的系统包
+      package_facts:
+        manager: auto
+
+    - name: 安装缺失的包
+      apt:
+        name: "{{ item }}"
+        state: present
+        update_cache: yes
+      loop:
+        - wget
+        - sudo
+        - net-tools
+      when: item not in ansible_facts.packages
+
+    - name: 检查 K3s 所需目录
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /var/lib/kubelet
+
+    - name: 检查 K3s 网络配置
+      shell: |
+        echo "=== 网络接口 ==="
+        ip addr show
+        echo "=== DNS 配置 ==="
+        cat /etc/resolv.conf
+        echo "=== 防火墙状态 ==="
+        if command -v ufw >/dev/null 2>&1; then
+          ufw status
+        else
+          echo "ufw 未安装"
+        fi
+      register: network_check
+      changed_when: false
+
+    - name: 显示网络配置
+      debug:
+        msg: "{{ network_check.stdout_lines }}"
+
+    - name: 检查系统资源
+      shell: |
+        echo "=== CPU 信息 ==="
+        lscpu | grep "CPU(s):"
+        echo "=== 内存信息 ==="
+        free -h
+        echo "=== 存储信息 ==="
+        df -h /var/lib/rancher/k3s
+      register: resource_check
+      changed_when: false
+
+    - name: 显示系统资源
+      debug:
+        msg: "{{ resource_check.stdout_lines }}"
+
+    - name: 检查 containerd 状态
+      shell: |
+        if [ -f /var/lib/rancher/k3s/agent/containerd/containerd.log ]; then
+          echo "=== Containerd 日志 ==="
+          tail -n 20 /var/lib/rancher/k3s/agent/containerd/containerd.log
+        else
+          echo "Containerd 日志不存在"
+        fi
+      register: containerd_check
+      changed_when: false
+      ignore_errors: yes
+
+    - name: 显示 containerd 状态
+      debug:
+        msg: "{{ containerd_check.stdout_lines }}"
+
+    - name: 检查 K3s 集群状态
+      shell: |
+        if command -v kubectl >/dev/null 2>&1; then
+          echo "=== 节点状态 ==="
+          kubectl get nodes -o wide
+          echo "=== Pod 状态 ==="
+          kubectl get pods -A
+          echo "=== 存储类 ==="
+          kubectl get storageclass
+        else
+          echo "kubectl 未安装"
+        fi
+      register: cluster_check
+      changed_when: false
+      ignore_errors: yes
+
+    - name: 显示集群状态
+      debug:
+        msg: "{{ cluster_check.stdout_lines }}"
+
+    - name: 生成环境报告
+      copy:
+        content: |
+          环境验证报告
+          时间: {{ ansible_date_time.iso8601 }}
+          
+          1. 系统信息
+          - 操作系统: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          - 内核版本: {{ ansible_kernel }}
+          
+          2. K3s 状态
+          {{ k3s_check.stdout }}
+          
+          3. 已安装的关键包
+          - wget: {{ 'wget' in ansible_facts.packages }}
+          - sudo: {{ 'sudo' in ansible_facts.packages }}
+          - net-tools: {{ 'net-tools' in ansible_facts.packages }}
+          
+          4. 系统资源
+          {{ resource_check.stdout }}
+          
+          5. 网络配置
+          {{ network_check.stdout }}
+          
+          6. 集群状态
+          {{ cluster_check.stdout }}
+          
+          7. 容器运行时状态
+          {{ containerd_check.stdout }}
+        dest: /tmp/environment_report.txt
+        mode: '0644'
+
+    - name: 显示报告位置
+      debug:
+        msg: "环境报告已生成：/tmp/environment_report.txt" 
