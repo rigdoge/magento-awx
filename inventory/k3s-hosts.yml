@@ -6,6 +6,7 @@ all:
         k3s-master:
           ansible_connection: local
           ansible_python_interpreter: /usr/bin/python3
+          ansible_user: root
       vars:
         ansible_become: yes
         ansible_become_method: sudo 
