@@ -8,6 +8,21 @@
     - name: 安装 fail2ban
       shell: |
         set -x
+        echo "=== 清理旧安装 ==="
+        
+        # 停止并禁用服务
+        systemctl stop fail2ban || true
+        systemctl disable fail2ban || true
+        
+        # 删除旧文件
+        rm -rf /etc/fail2ban
+        rm -f /usr/bin/fail2ban*
+        
+        # 清理包
+        apt-get remove -y fail2ban || true
+        apt-get purge -y fail2ban || true
+        apt-get autoremove -y
+        
         echo "=== 安装 fail2ban ==="
         
         # 安装 Python 依赖
