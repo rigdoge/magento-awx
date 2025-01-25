@@ -66,6 +66,17 @@
         set -x  # 启用调试模式
         POD_NAME="{{ pod_name.stdout }}"
         echo "=== 更新包管理器 ==="
+        
+        # 创建必要的目录
+        echo "创建必要的目录..."
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- mkdir -p /var/lib/apt/lists/partial
+        
+        # 设置目录权限
+        echo "设置目录权限..."
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- chown -R root:root /var/lib/apt/lists
+        
+        # 更新包管理器
+        echo "执行更新..."
         kubectl exec -n {{ use_namespace }} $POD_NAME -- apt-get update
       register: update_result
 
