@@ -1,0 +1,24 @@
+---
+- name: 简单检查 K3s 状态
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 检查 K3s 基本功能
+      shell: |
+        echo "=== K3s 节点状态 ==="
+        kubectl get nodes
+        
+        echo -e "\n=== K3s 系统 Pod ==="
+        kubectl get pods -n kube-system
+        
+        echo -e "\n=== 系统资源 ==="
+        free -h
+        df -h /
+      register: k3s_status
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      ignore_errors: yes
+
+    - name: 显示检查结果
+      debug:
+        msg: "{{ k3s_status.stdout_lines | default([]) }}" 

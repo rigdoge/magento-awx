@@ -1,0 +1,30 @@
+---
+# 查找组件配置
+- name: 查找组件配置
+  set_fact:
+    current_component: "{{ environments | selectattr('name', 'equalto', component_name) | list | first }}"
+
+# 显示开始安装
+- name: 显示开始安装
+  debug:
+    msg: "开始安装组件: {{ component_name }}({{ current_component.role }})，版本: {{ current_component.version | default('latest') }}"
+
+# 安装组件
+- name: 安装组件
+  include_role:
+    name: "{{ current_component.role }}"
+  vars:
+    # 通用版本变量
+    nginx_version: "{{ current_component.version | default('latest') if current_component.name == 'nginx' }}"
+    php_version: "{{ current_component.version | default('latest') if current_component.name.startswith('php') }}"
+    mysql_version: "{{ current_component.version | default('latest') if current_component.name == 'percona' }}"
+    redis_version: "{{ current_component.version | default('latest') if current_component.name == 'redis' }}"
+    rabbitmq_version: "{{ current_component.version | default('latest') if current_component.name == 'rabbitmq' }}"
+    varnish_version: "{{ current_component.version | default('latest') if current_component.name == 'varnish' }}"
+    elasticsearch_version: "{{ current_component.version | default('latest') if current_component.name == 'opensearch' }}"
+    composer_version: "{{ current_component.version | default('latest') if current_component.name == 'composer' }}"
+
+# 显示安装完成
+- name: 显示安装完成
+  debug:
+    msg: "组件 {{ component_name }} 安装完成" 

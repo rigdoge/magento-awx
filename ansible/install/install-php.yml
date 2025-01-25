@@ -1,0 +1,157 @@
+---
+- name: 安装 PHP-FPM 8.3
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 创建 PHP-FPM 配置
+      copy:
+        dest: /tmp/php-fpm.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: php-fpm
+            namespace: "{{ namespace }}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: php-fpm
+            template:
+              metadata:
+                labels:
+                  app: php-fpm
+              spec:
+                containers:
+                - name: php-fpm
+                  image: php:8.3-fpm
+                  resources:
+                    limits:
+                      cpu: "1"
+                      memory: "1Gi"
+                    requests:
+                      cpu: "500m"
+                      memory: "512Mi"
+                  lifecycle:
+                    postStart:
+                      exec:
+                        command:
+                        - /bin/sh
+                        - -c
+                        - |
+                          # 安装基础依赖
+                          apt-get update && apt-get install -y \
+                            libzip-dev \
+                            libxml2-dev \
+                            libxslt1-dev \
+                            libgd-dev \
+                            libicu-dev \
+                            libsodium-dev \
+                            libcurl4-openssl-dev \
+                            && rm -rf /var/lib/apt/lists/*
+                          
+                          # 安装 PHP 扩展
+                          docker-php-ext-install -j$(nproc) \
+                            bcmath \
+                            ctype \
+                            curl \
+                            dom \
+                            fileinfo \
+                            filter \
+                            gd \
+                            hash \
+                            iconv \
+                            intl \
+                            json \
+                            mbstring \
+                            opcache \
+                            pdo_mysql \
+                            simplexml \
+                            soap \
+                            sockets \
+                            sodium \
+                            tokenizer \
+                            xml \
+                            xmlwriter \
+                            xsl \
+                            zip
+                          
+                          # 配置 opcache
+                          echo "opcache.enable=1" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                          echo "opcache.enable_cli=1" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                          echo "opcache.memory_consumption=128" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                          echo "opcache.interned_strings_buffer=8" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                          echo "opcache.max_accelerated_files=4000" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                          echo "opcache.revalidate_freq=60" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                          echo "opcache.fast_shutdown=1" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                  readinessProbe:
+                    tcpSocket:
+                      port: 9000
+                    initialDelaySeconds: 5
+                    periodSeconds: 10
+                  ports:
+                  - containerPort: 9000
+                  volumeMounts:
+                  - name: magento-code
+                    mountPath: /var/www/html
+                volumes:
+                - name: magento-code
+                  emptyDir: {}
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: php-fpm
+            namespace: "{{ namespace }}"
+          spec:
+            selector:
+              app: php-fpm
+            ports:
+            - port: 9000
+              targetPort: 9000
+            type: ClusterIP
+
+    - name: 清理旧的部署
+      shell: |
+        /usr/local/bin/k3s kubectl delete -f /tmp/php-fpm.yaml || true
+        sleep 5
+      register: cleanup_result
+
+    - name: 部署 PHP-FPM
+      shell: |
+        /usr/local/bin/k3s kubectl apply -f /tmp/php-fpm.yaml
+      register: deploy_result
+
+    - name: 等待 PHP-FPM Pod 就绪
+      shell: |
+        for i in {1..30}; do
+          if /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
+            echo "PHP-FPM Pod 已就绪"
+            break
+          fi
+          echo "等待 PHP-FPM Pod 就绪... $i"
+          sleep 3
+        done
+      register: wait_result
+
+    - name: 显示 PHP-FPM 状态
+      shell: |
+        echo "=== PHP-FPM Pod 状态 ==="
+        /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=php-fpm
+        
+        echo -e "\n=== PHP-FPM 版本 ==="
+        /usr/local/bin/k3s kubectl exec -n {{ namespace }} -l app=php-fpm -- php -v
+        
+        echo -e "\n=== PHP 扩展列表 ==="
+        /usr/local/bin/k3s kubectl exec -n {{ namespace }} -l app=php-fpm -- php -m
+        
+        echo -e "\n=== Opcache 配置 ==="
+        /usr/local/bin/k3s kubectl exec -n {{ namespace }} -l app=php-fpm -- php -i | grep -i opcache
+      register: status_result
+
+    - name: 显示部署结果
+      debug:
+        msg: 
+          - "{{ deploy_result.stdout_lines | default([]) }}"
+          - "{{ wait_result.stdout_lines | default([]) }}"
+          - "{{ status_result.stdout_lines | default([]) }}" 

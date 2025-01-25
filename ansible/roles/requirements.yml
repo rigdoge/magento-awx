@@ -1,0 +1,11 @@
+---
+collections:
+  - kubernetes.core
+  - community.kubernetes
+roles:
+  - name: geerlingguy.nginx
+    version: "3.1.0"
+  - name: geerlingguy.mysql
+    version: "3.3.0"
+  - name: geerlingguy.php
+    version: "4.5.0" 

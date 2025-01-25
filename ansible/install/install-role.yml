@@ -1,0 +1,25 @@
+---
+- name: 使用 Galaxy 角色
+  hosts: all
+  vars:
+    role_name: "{{ role | default('') }}"
+    namespace: "{{ namespace | default('default') }}"
+    # 常用软件的版本变量
+    nginx_version: "{{ nginx_version | default('1.24') }}"
+    php_version: "{{ php_version | default('8.3') }}"
+    mysql_version: "{{ mysql_version | default('8.0') }}"
+    redis_version: "{{ redis_version | default('7.0') }}"
+  
+  pre_tasks:
+    - name: 验证必要参数
+      fail:
+        msg: "必须指定 role 参数"
+      when: role_name == ''
+
+  roles:
+    - "{{ role_name }}"
+
+  post_tasks:
+    - name: 显示安装完成
+      debug:
+        msg: "角色 {{ role_name }} 已安装完成，使用的版本变量：nginx_version={{ nginx_version }}, php_version={{ php_version }}, mysql_version={{ mysql_version }}, redis_version={{ redis_version }}" 

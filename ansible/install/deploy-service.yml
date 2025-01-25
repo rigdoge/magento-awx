@@ -1,0 +1,79 @@
+---
+- name: 部署服务到 K3s
+  hosts: all
+  vars:
+    namespace: "{{ namespace | default('default') }}"
+    app_name: "{{ app | default('') }}"
+    image: "{{ image | default('') }}"
+    port: "{{ port | default('80') }}"
+    nodeport: "{{ nodeport | default('30080') }}"
+  
+  tasks:
+    - name: 验证必要参数
+      fail:
+        msg: "必须指定 app 和 image 参数"
+      when: app_name == '' or image == ''
+
+    - name: 创建命名空间
+      k8s:
+        name: "{{ namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: 部署应用
+      k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: "{{ app_name }}"
+            namespace: "{{ namespace }}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: "{{ app_name }}"
+            template:
+              metadata:
+                labels:
+                  app: "{{ app_name }}"
+              spec:
+                containers:
+                - name: "{{ app_name }}"
+                  image: "{{ image }}"
+                  ports:
+                  - containerPort: "{{ port }}"
+
+    - name: 创建服务
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ app_name }}"
+            namespace: "{{ namespace }}"
+          spec:
+            type: NodePort
+            ports:
+            - port: "{{ port }}"
+              targetPort: "{{ port }}"
+              nodePort: "{{ nodeport }}"
+            selector:
+              app: "{{ app_name }}"
+
+    - name: 等待部署就绪
+      k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ app_name }}"
+        namespace: "{{ namespace }}"
+        wait: yes
+        wait_timeout: 300
+      register: deploy_status
+
+    - name: 显示部署状态
+      debug:
+        var: deploy_status 

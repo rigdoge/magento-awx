@@ -1,0 +1,21 @@
+---
+- name: 检查 K3s 配置文件权限
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 检查配置文件权限
+      shell: |
+        echo "=== K3s 配置文件权限 ==="
+        ls -l /etc/rancher/k3s/k3s.yaml
+        
+        echo -e "\n=== 当前用户信息 ==="
+        whoami
+        groups
+        
+        echo -e "\n=== KUBECONFIG 环境变量 ==="
+        echo $KUBECONFIG
+      register: config_info
+
+    - name: 显示配置信息
+      debug:
+        msg: "{{ config_info.stdout_lines | default([]) }}" 

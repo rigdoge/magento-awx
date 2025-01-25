@@ -1,0 +1,127 @@
+---
+- name: 安装 RabbitMQ 3.13
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('default') }}"
+    use_nodeport: "{{ nodeport | default(30672) }}"
+    management_nodeport: "{{ use_nodeport | int + 1 }}"
+
+  tasks:
+    - name: 创建 RabbitMQ 配置
+      copy:
+        dest: /tmp/rabbitmq.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: rabbitmq
+            namespace: {{ use_namespace }}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: rabbitmq
+            template:
+              metadata:
+                labels:
+                  app: rabbitmq
+              spec:
+                containers:
+                - name: rabbitmq
+                  image: rabbitmq:3.13-management
+                  ports:
+                  - containerPort: 5672
+                    name: amqp
+                  - containerPort: 15672
+                    name: management
+                  readinessProbe:
+                    tcpSocket:
+                      port: 5672
+                    initialDelaySeconds: 10
+                    periodSeconds: 10
+                  livenessProbe:
+                    tcpSocket:
+                      port: 5672
+                    initialDelaySeconds: 60
+                    periodSeconds: 20
+                    timeoutSeconds: 5
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: rabbitmq
+            namespace: {{ use_namespace }}
+          spec:
+            type: NodePort
+            ports:
+            - port: 5672
+              targetPort: 5672
+              nodePort: {{ use_nodeport }}
+              name: amqp
+            - port: 15672
+              targetPort: 15672
+              nodePort: {{ management_nodeport }}
+              name: management
+            selector:
+              app: rabbitmq
+
+    - name: 清理旧的部署
+      shell: |
+        /usr/local/bin/k3s kubectl delete -f /tmp/rabbitmq.yaml || true
+        sleep 5
+      register: cleanup_result
+
+    - name: 部署 RabbitMQ
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+        /usr/local/bin/k3s kubectl apply -f /tmp/rabbitmq.yaml
+      register: deploy_result
+
+    - name: 等待 Pod 就绪
+      shell: |
+        echo "等待 RabbitMQ Pod 就绪..."
+        attempt=1
+        max_attempts=30
+        while [ $attempt -le $max_attempts ]; do
+          echo "检查 #$attempt..."
+          
+          # 获取 Pod 状态
+          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.phase}')
+          if [ "$POD_STATUS" = "Running" ]; then
+            # 检查就绪状态
+            READY_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=rabbitmq -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+            if [ "$READY_STATUS" = "true" ]; then
+              echo "RabbitMQ Pod 已就绪!"
+              
+              # 显示访问信息
+              NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+              echo -e "\n=== 访问信息 ==="
+              echo "AMQP 端口: $NODE_IP:{{ use_nodeport }}"
+              echo "管理界面: http://$NODE_IP:{{ management_nodeport }}"
+              echo "默认用户名/密码: guest/guest"
+              exit 0
+            fi
+          fi
+          
+          # 如果 Pod 不在运行或未就绪，显示详细信息
+          echo "Pod 状态: $POD_STATUS"
+          /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} -l app=rabbitmq
+          /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} -l app=rabbitmq
+          
+          attempt=$((attempt + 1))
+          sleep 10
+        done
+        
+        echo "等待超时，RabbitMQ Pod 未就绪"
+        exit 1
+      register: wait_result
+
+    - name: 显示部署结果
+      debug:
+        msg: 
+          - "清理结果: {{ cleanup_result.stdout_lines | default([]) }}"
+          - "部署结果: {{ deploy_result.stdout_lines | default([]) }}"
+          - "等待结果: {{ wait_result.stdout_lines | default([]) }}" 
