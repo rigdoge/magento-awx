@@ -24,35 +24,46 @@
         echo "Pod 名称: $POD_NAME"
         
         echo "=== Pod 详细信息 ==="
-        kubectl describe pod -n "$NAMESPACE" "$POD_NAME"
+        kubectl describe pod -n "$NAMESPACE" "$POD_NAME" | grep -E "^(Name:|Namespace:|Status:|IP:|Node:|Conditions:|Events:)"
         
-        echo "=== Pod 日志 ==="
-        kubectl logs -n "$NAMESPACE" "$POD_NAME"
+        echo "=== Pod 日志（最后20行）==="
+        kubectl logs -n "$NAMESPACE" "$POD_NAME" --tail=20
         
         echo "=== 系统资源使用情况 ==="
         kubectl top pod -n "$NAMESPACE" "$POD_NAME" || true
         
-        echo "=== 尝试重启 Pod ==="
-        kubectl delete pod -n "$NAMESPACE" "$POD_NAME" --force --grace-period=0
-        
-        echo "等待新 Pod 创建..."
-        sleep 10
-        
-        echo "=== 检查新 Pod 状态 ==="
-        NEW_POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app=opensearch -o jsonpath='{.items[0].metadata.name}')
-        kubectl get pod -n "$NAMESPACE" "$NEW_POD_NAME" -o wide
-        
-        echo "=== 等待 Pod 就绪 ==="
-        kubectl wait --for=condition=ready pod -n "$NAMESPACE" -l app=opensearch --timeout=300s || true
-        
-        echo "=== 最终状态 ==="
-        kubectl get pods -n "$NAMESPACE" -l app=opensearch -o wide
-        
         echo "=== 检查服务状态 ==="
         kubectl get svc -n "$NAMESPACE" -l app=opensearch
         
-        echo "=== 检查日志 ==="
-        kubectl logs -n "$NAMESPACE" "$NEW_POD_NAME"
+        echo "=== 检查 OpenSearch 健康状态 ==="
+        POD_IP=$(kubectl get pod -n "$NAMESPACE" "$POD_NAME" -o jsonpath='{.status.podIP}')
+        if [ ! -z "$POD_IP" ]; then
+          curl -s "http://$POD_IP:9200/_cluster/health" || echo "无法连接到 OpenSearch"
+        fi
+        
+        echo "=== 是否需要重启？ ==="
+        read -p "是否要重启 Pod？(y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+          echo "=== 尝试重启 Pod ==="
+          kubectl delete pod -n "$NAMESPACE" "$POD_NAME" --force --grace-period=0
+          
+          echo "等待新 Pod 创建..."
+          sleep 10
+          
+          echo "=== 检查新 Pod 状态 ==="
+          NEW_POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app=opensearch -o jsonpath='{.items[0].metadata.name}')
+          kubectl get pod -n "$NAMESPACE" "$NEW_POD_NAME" -o wide
+          
+          echo "=== 等待 Pod 就绪 ==="
+          kubectl wait --for=condition=ready pod -n "$NAMESPACE" -l app=opensearch --timeout=300s || true
+          
+          echo "=== 最终状态 ==="
+          kubectl get pods -n "$NAMESPACE" -l app=opensearch -o wide
+          
+          echo "=== 检查新 Pod 日志 ==="
+          kubectl logs -n "$NAMESPACE" "$NEW_POD_NAME" --tail=20
+        fi
       register: check_result
 
     - name: 显示诊断结果
