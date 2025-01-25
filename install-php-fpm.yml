@@ -25,6 +25,12 @@
         fi
       register: namespace_result
 
+    - name: 验证命名空间状态
+      shell: |
+        echo "=== 验证命名空间 {{ use_namespace }} ==="
+        /usr/local/bin/k3s kubectl get namespace {{ use_namespace }}
+      register: verify_namespace
+      
     - name: 创建 PHP-FPM 配置
       copy:
         dest: /tmp/php-fpm.yaml
