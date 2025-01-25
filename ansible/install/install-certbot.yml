@@ -58,20 +58,8 @@
         echo "=== 安装 certbot ==="
         
         # 删除可能存在的旧版本
-        apt-get remove -y certbot
-        
-        # 确保 snap 正常运行
-        systemctl start snapd
-        systemctl enable snapd
-        
-        # 等待 snap 系统就绪
-        echo "等待 snap 系统就绪..."
-        for i in $(seq 1 30); do
-          if snap list >/dev/null 2>&1; then
-            break
-          fi
-          sleep 2
-        done
+        apt-get remove -y certbot || true
+        rm -f /usr/bin/certbot
         
         # 安装最新版本
         snap install --classic certbot
@@ -88,6 +76,21 @@
     - name: 显示安装结果
       debug:
         msg: "{{ install_result.stdout_lines }}"
+
+    - name: 确认 certbot 可用
+      shell: |
+        set -x
+        echo "=== 确认 certbot 可用 ==="
+        
+        # 检查命令是否存在
+        if ! command -v certbot &> /dev/null; then
+          echo "certbot 命令不可用！"
+          exit 1
+        fi
+        
+        # 显示版本信息
+        certbot --version
+      register: certbot_check
 
     - name: 创建 webroot 目录
       file:
