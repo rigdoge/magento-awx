@@ -1,0 +1,40 @@
+---
+- name: 检查 cert-manager 状态
+  hosts: k3s_master
+  gather_facts: yes
+  tasks:
+    - name: 检查 cert-manager pods 状态
+      shell: |
+        kubectl get pods -n cert-manager -o wide
+      register: cert_manager_pods
+      
+    - name: 显示 cert-manager pods 状态
+      debug:
+        msg: "{{ cert_manager_pods.stdout_lines }}"
+
+    - name: 检查 ClusterIssuer 状态
+      shell: |
+        kubectl get clusterissuer letsencrypt-prod -o wide
+      register: cluster_issuer
+      
+    - name: 显示 ClusterIssuer 状态
+      debug:
+        msg: "{{ cluster_issuer.stdout_lines }}"
+
+    - name: 检查 AWX 证书状态
+      shell: |
+        kubectl get certificate -n awx
+      register: awx_cert
+      
+    - name: 显示 AWX 证书状态
+      debug:
+        msg: "{{ awx_cert.stdout_lines }}"
+
+    - name: 检查 AWX Ingress 配置
+      shell: |
+        kubectl get ingress -n awx
+      register: awx_ingress
+      
+    - name: 显示 AWX Ingress 状态
+      debug:
+        msg: "{{ awx_ingress.stdout_lines }}" 
