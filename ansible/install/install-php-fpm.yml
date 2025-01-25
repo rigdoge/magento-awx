@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('magento-shared') }}"
+    use_namespace: "{{ namespace | default('default') }}"
     use_nodeport: "{{ nodeport | default('30900') }}"
   tasks:
     - name: 显示配置信息
@@ -13,12 +13,16 @@
           - "命名空间: {{ use_namespace }}"
           - "NodePort: {{ use_nodeport }}"
 
-    - name: 创建命名空间
+    - name: 检查命名空间
       shell: |
-        echo "=== 检查命名空间 ==="
-        echo "当前命名空间: {{ use_namespace }}"
-        kubectl get namespace {{ use_namespace }} || kubectl create namespace {{ use_namespace }}
-        echo "命名空间就绪"
+        if [ "{{ use_namespace }}" != "default" ]; then
+          echo "=== 检查命名空间 ==="
+          echo "当前命名空间: {{ use_namespace }}"
+          kubectl get namespace {{ use_namespace }} || kubectl create namespace {{ use_namespace }}
+          echo "命名空间就绪"
+        else
+          echo "使用默认命名空间"
+        fi
       register: namespace_result
 
     - name: 创建 PHP-FPM 配置
