@@ -10,8 +10,15 @@
         set -x
         echo "=== 安装 fail2ban ==="
         
-        # 安装 fail2ban
+        # 安装 Python 依赖
         apt-get update
+        apt-get install -y \
+          python3 \
+          python3-pip \
+          python3-setuptools \
+          python3-distutils
+        
+        # 安装 fail2ban
         apt-get install -y fail2ban
         
         # 创建配置文件
@@ -45,9 +52,14 @@
         logpath = /var/log/nginx/error.log
         EOF
         
-        # 启动服务
+        # 重启服务
+        systemctl stop fail2ban || true
+        systemctl daemon-reload
         systemctl enable fail2ban
         systemctl restart fail2ban
+        
+        # 等待服务启动
+        sleep 5
         
         # 检查状态
         systemctl status fail2ban
