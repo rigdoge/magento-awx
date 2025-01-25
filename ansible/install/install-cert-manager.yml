@@ -1,0 +1,92 @@
+---
+- name: 安装和配置 cert-manager
+  hosts: k3s_master
+  gather_facts: yes
+  vars:
+    domain_name: awx.tschenfeng.com
+    email_address: ssl@tschenfeng.com  # 已更新为您的邮箱
+
+  tasks:
+    - name: 创建 cert-manager 命名空间
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: cert-manager
+
+    - name: 安装 cert-manager
+      kubernetes.core.k8s:
+        state: present
+        src: https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+    - name: 等待 cert-manager 就绪
+      shell: |
+        kubectl wait --for=condition=ready pod -l app=cert-manager --namespace cert-manager --timeout=300s
+      register: wait_result
+      until: wait_result.rc == 0
+      retries: 30
+      delay: 10
+
+    - name: 创建 ClusterIssuer
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: letsencrypt-prod
+          spec:
+            acme:
+              server: https://acme-v02.api.letsencrypt.org/directory
+              email: "{{ email_address }}"
+              privateKeySecretRef:
+                name: letsencrypt-prod
+              solvers:
+              - http01:
+                  ingress:
+                    class: nginx
+
+    - name: 配置 AWX Ingress 使用 cert-manager
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: awx-ingress
+            namespace: awx
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              kubernetes.io/ingress.class: nginx
+          spec:
+            tls:
+            - hosts:
+              - "{{ domain_name }}"
+              secretName: awx-tls
+            rules:
+            - host: "{{ domain_name }}"
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: awx-service  # 请确认这是您的 AWX service 名称
+                      port:
+                        number: 80
+
+    - name: 等待证书就绪
+      shell: |
+        kubectl wait --for=condition=ready certificate awx-tls -n awx --timeout=300s
+      register: cert_wait_result
+      until: cert_wait_result.rc == 0
+      retries: 30
+      delay: 10
+
+    - name: 验证证书状态
+      shell: |
+        kubectl get certificate awx-tls -n awx -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: cert_status
+      failed_when: cert_status.stdout != "True" 
