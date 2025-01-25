@@ -4,18 +4,20 @@
   gather_facts: no
   become: yes
   vars:
-    namespace: "{{ namespace | default('default') }}"  # 可在 AWX 中覆盖
+    # 指定 Nginx Pod 所在的命名空间
+    namespace: "{{ namespace | default('default') }}"
     domain_name: "{{ domain_name }}"
     email_address: "{{ email_address }}"
-    use_staging: "{{ staging | default(true) }}"  # 默认使用 staging 环境，避免触发限制
+    use_staging: "{{ staging | default(true) }}"
+    # 主机上用于存放验证文件的目录，将通过 hostPath 挂载到 Nginx Pod 中
     webroot_path: "/var/www/certbot"
   
   tasks:
-    - name: 检查 certbot 是否已安装
+    - name: 检查主机上的 certbot 是否已安装
       shell: |
         set -x
         if ! command -v certbot &> /dev/null; then
-          echo "请先运行 install-certbot.yml 安装 certbot"
+          echo "请先在主机上运行 install-certbot-base.yml 安装 certbot"
           exit 1
         fi
         certbot --version
@@ -102,22 +104,19 @@
         certbot --version
       register: certbot_check
 
-    - name: 创建 webroot 目录
+    - name: 创建主机上的 webroot 目录（用于存放验证文件）
       file:
         path: "{{ webroot_path }}"
         state: directory
         mode: '0755'
       become: true
 
-    - name: 修改 nginx deployment 以使用 hostPath
+    - name: 修改 nginx deployment 以使用 hostPath（让 Nginx Pod 访问主机上的验证文件）
       shell: |
         set -x
         echo "=== 修改 Nginx Deployment ==="
         
-        # 获取当前配置
-        kubectl -n {{ namespace }} get deployment nginx -o yaml > /tmp/nginx-deploy.yaml
-        
-        # 添加 hostPath 卷
+        # 添加 hostPath 卷，将主机的验证目录挂载到 Pod 中
         cat > /tmp/nginx-deploy-patch.yaml << EOF
         spec:
           template:
@@ -330,7 +329,7 @@
       debug:
         msg: "{{ test_access_result.stdout_lines + test_access_result.stderr_lines }}"
 
-    - name: 申请证书
+    - name: 申请证书（在主机上运行 certbot）
       shell: |
         set -x
         echo "=== 申请证书 ==="
@@ -342,7 +341,8 @@
         echo "Webroot 目录内容："
         ls -la {{ webroot_path }}/.well-known/acme-challenge/
         
-        # 申请证书
+        # 在主机上运行 certbot 申请证书
+        # 证书文件将保存在主机的 /etc/letsencrypt/live/{{ domain_name }}/ 目录
         certbot certonly \
           --webroot \
           -w {{ webroot_path }} \
@@ -447,7 +447,7 @@
       debug:
         msg: "{{ host_cert_result.stdout_lines }}"
 
-    - name: 复制证书到 Nginx Pod
+    - name: 复制证书到 Nginx Pod（从主机复制到 Pod）
       shell: |
         set -x
         echo "=== 复制证书到 Nginx Pod ==="
@@ -456,8 +456,8 @@
         POD_NAME=$(kubectl get pods -n {{ namespace }} -l app=nginx -o jsonpath='{.items[0].metadata.name}')
         echo "Pod 名称: $POD_NAME"
         
-        # 检查源证书文件
-        echo "检查源证书文件..."
+        # 检查主机上的源证书文件
+        echo "检查主机上的源证书文件..."
         ls -la /etc/letsencrypt/live/{{ domain_name }}/
         
         # 创建 Pod 中的目录
@@ -465,18 +465,12 @@
         kubectl -n {{ namespace }} exec $POD_NAME -- mkdir -p /etc/letsencrypt/live/{{ domain_name }}
         kubectl -n {{ namespace }} exec $POD_NAME -- chmod 755 /etc/letsencrypt/live/{{ domain_name }}
         
-        # 直接复制证书文件
+        # 从主机复制证书文件到 Pod
         echo "复制证书文件..."
         for cert in fullchain.pem privkey.pem chain.pem; do
           echo "复制 $cert..."
-          # 检查源文件
-          ls -l /etc/letsencrypt/live/{{ domain_name }}/$cert
-          # 复制文件
           kubectl -n {{ namespace }} cp /etc/letsencrypt/live/{{ domain_name }}/$cert {{ namespace }}/$POD_NAME:/etc/letsencrypt/live/{{ domain_name }}/$cert
-          # 设置权限
           kubectl -n {{ namespace }} exec $POD_NAME -- chmod 644 /etc/letsencrypt/live/{{ domain_name }}/$cert
-          # 验证目标文件
-          kubectl -n {{ namespace }} exec $POD_NAME -- ls -l /etc/letsencrypt/live/{{ domain_name }}/$cert
         done
         
         # 验证复制结果
