@@ -219,16 +219,21 @@
       shell: |
         set -x
         echo "=== 检查 Nginx 状态 ==="
-        echo "Nginx 进程信息："
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ps aux | grep nginx
         
-        echo "Nginx 错误日志："
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- tail -n 20 /var/log/nginx/error.log
+        # 检查 Nginx 进程
+        echo "Nginx 进程信息："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ps aux | grep nginx || true
+        
+        # 检查 Nginx 配置
+        echo "Nginx 配置测试："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -t || true
+        
+        # 只检查最后 5 行错误日志
+        echo "最近的 Nginx 错误日志："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- tail -n 5 /var/log/nginx/error.log || true
       register: nginx_status_result
-      
-    - name: 显示 Nginx 状态检查结果
-      debug:
-        msg: "{{ nginx_status_result.stdout_lines }}"
+      async: 30  # 30秒超时
+      poll: 2    # 每2秒检查一次
 
     - name: 测试验证文件访问
       shell: |
