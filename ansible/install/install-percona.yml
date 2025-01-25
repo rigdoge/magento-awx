@@ -29,6 +29,17 @@
                 labels:
                   app: percona
               spec:
+                securityContext:
+                  fsGroup: 1001
+                initContainers:
+                - name: volume-permissions
+                  image: busybox
+                  command: ["sh", "-c", "chown -R 1001:1001 /var/lib/mysql && chmod -R 0770 /var/lib/mysql"]
+                  volumeMounts:
+                  - name: mysql-persistent-storage
+                    mountPath: /var/lib/mysql
+                  securityContext:
+                    runAsUser: 0
                 containers:
                 - name: percona
                   image: percona:8.0
@@ -37,6 +48,9 @@
                   env:
                   - name: MYSQL_ROOT_PASSWORD
                     value: "magento123"
+                  securityContext:
+                    runAsUser: 1001
+                    runAsGroup: 1001
                   resources:
                     requests:
                       memory: "1Gi"
