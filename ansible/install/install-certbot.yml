@@ -106,19 +106,49 @@
         # 应用修改
         kubectl -n {{ namespace }} patch deployment nginx --patch-file /tmp/nginx-deploy-patch.yaml
         
-        # 等待 Pod 重启
+        # 等待 Pod 重启完成
         echo "等待 Pod 重启..."
-        sleep 10
+        kubectl -n {{ namespace }} rollout status deployment/nginx --timeout=60s
       register: patch_result
       
     - name: 显示修改结果
       debug:
         msg: "{{ patch_result.stdout_lines }}"
 
-    - name: 获取 nginx pod 名称
-      shell: kubectl -n {{ namespace }} get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}'
-      register: nginx_pod
-      changed_when: false
+    - name: 等待新的 Pod 就绪
+      shell: |
+        set -x
+        echo "=== 等待新的 Pod 就绪 ==="
+        
+        # 等待 Pod 变为 Running 状态
+        for i in $(seq 1 12); do
+          echo "第 $i 次检查..."
+          POD_STATUS=$(kubectl -n {{ namespace }} get pods -l app=nginx -o jsonpath='{.items[0].status.phase}')
+          if [ "$POD_STATUS" = "Running" ]; then
+            echo "Pod 已就绪"
+            break
+          fi
+          echo "Pod 状态: $POD_STATUS，等待5秒..."
+          sleep 5
+        done
+        
+        # 获取新的 Pod 名称
+        NEW_POD=$(kubectl -n {{ namespace }} get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}')
+        if [ -z "$NEW_POD" ]; then
+          echo "未找到新的 Nginx Pod"
+          exit 1
+        fi
+        echo $NEW_POD
+      register: new_pod
+      
+    - name: 显示新 Pod 信息
+      debug:
+        msg: "新的 Nginx Pod: {{ new_pod.stdout }}"
+
+    - name: 更新 Pod 名称变量
+      set_fact:
+        nginx_pod:
+          stdout: "{{ new_pod.stdout }}"
 
     - name: 在 nginx pod 中创建 webroot 目录
       shell: kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- mkdir -p {{ webroot_path }}
