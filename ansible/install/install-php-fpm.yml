@@ -198,10 +198,17 @@
             fi
           fi
           
+          echo "=== Pod 详细状态 ==="
+          kubectl get pod -n {{ use_namespace }} $POD_NAME -o yaml | grep -A 10 "status:"
+          
+          echo "=== Pod 事件 ==="
+          kubectl get events -n {{ use_namespace }} --field-selector involvedObject.name=$POD_NAME --sort-by='.lastTimestamp'
+          
           echo "=== Pod 详细信息 ==="
           kubectl describe pod -n {{ use_namespace }} $POD_NAME
           
           echo "=== Pod 日志 ==="
+          kubectl logs -n {{ use_namespace }} $POD_NAME --tail=50 --previous || true
           kubectl logs -n {{ use_namespace }} $POD_NAME --tail=50 || true
           
           sleep 5
