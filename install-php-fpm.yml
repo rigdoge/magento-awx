@@ -11,15 +11,6 @@
         msg: "必须指定 namespace 参数"
       when: namespace is not defined or namespace == ''
 
-    - name: 检查命名空间是否存在
-      command: /usr/local/bin/k3s kubectl get namespace {{ namespace }}
-      register: namespace_exists
-      ignore_errors: yes
-
-    - name: 创建命名空间
-      command: /usr/local/bin/k3s kubectl create namespace {{ namespace }}
-      when: namespace_exists.rc != 0
-      
     - name: 创建 PHP-FPM 配置
       copy:
         dest: /tmp/php-fpm.yaml
@@ -142,6 +133,22 @@
               name: fpm
             selector:
               app: php-fpm
+
+    - name: 创建命名空间
+      command: /usr/local/bin/k3s kubectl create namespace {{ namespace }}
+      ignore_errors: yes
+
+    - name: 等待命名空间就绪
+      shell: |
+        for i in $(seq 1 30); do
+          if /usr/local/bin/k3s kubectl get namespace {{ namespace }} &>/dev/null; then
+            echo "命名空间 {{ namespace }} 已就绪"
+            exit 0
+          fi
+          echo "等待命名空间... $i/30"
+          sleep 2
+        done
+      register: namespace_ready
 
     - name: 清理旧的部署
       shell: |
