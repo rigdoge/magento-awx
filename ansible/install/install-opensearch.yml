@@ -32,6 +32,19 @@
                 labels:
                   app: opensearch
               spec:
+                securityContext:
+                  fsGroup: 1000
+                  runAsUser: 1000
+                  runAsGroup: 1000
+                initContainers:
+                - name: volume-permissions
+                  image: busybox
+                  command: ["sh", "-c", "chown -R 1000:1000 /usr/share/opensearch/data && chmod -R 0770 /usr/share/opensearch/data"]
+                  volumeMounts:
+                  - name: opensearch-data
+                    mountPath: /usr/share/opensearch/data
+                  securityContext:
+                    runAsUser: 0
                 containers:
                 - name: opensearch
                   image: opensearchproject/opensearch:2.12.0
@@ -49,6 +62,12 @@
                     value: "true"
                   - name: DISABLE_INSTALL_DEMO_CONFIG
                     value: "true"
+                  - name: OPENSEARCH_JAVA_OPTS
+                    value: "-Xms1g -Xmx1g"
+                  - name: node.name
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.name
                   resources:
                     requests:
                       memory: "2Gi"
@@ -60,8 +79,16 @@
                     httpGet:
                       path: /_cluster/health
                       port: 9200
-                    initialDelaySeconds: 30
-                    periodSeconds: 10
+                    initialDelaySeconds: 60
+                    periodSeconds: 20
+                    timeoutSeconds: 5
+                  livenessProbe:
+                    httpGet:
+                      path: /_cluster/health
+                      port: 9200
+                    initialDelaySeconds: 120
+                    periodSeconds: 30
+                    timeoutSeconds: 5
                   volumeMounts:
                   - name: opensearch-data
                     mountPath: /usr/share/opensearch/data
@@ -96,32 +123,59 @@
 
     - name: 清理旧的部署
       shell: |
-        /usr/local/bin/k3s kubectl delete -f /tmp/opensearch.yaml || true
+        kubectl delete -f /tmp/opensearch.yaml || true
         sleep 5
       register: cleanup_result
 
     - name: 部署 OpenSearch
       shell: |
-        /usr/local/bin/k3s kubectl apply -f /tmp/opensearch.yaml
+        echo "=== 开始部署 OpenSearch ==="
+        echo "部署到命名空间: {{ use_namespace }}"
+        kubectl apply -f /tmp/opensearch.yaml
         
-        echo "等待 OpenSearch Pod 就绪..."
-        for i in {1..60}; do
-          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=opensearch -o jsonpath='{.items[0].status.phase}' | grep -q "Running"; then
-            echo "OpenSearch Pod 已就绪"
+        echo "等待 Pod 创建..."
+        for i in $(seq 1 30); do
+          echo "检查 Pod 创建进度... $i/30"
+          POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=opensearch -o jsonpath='{.items[0].metadata.name}')
+          if [ -z "$POD_NAME" ]; then
+            echo "Pod 名称为空，继续等待..."
+            sleep 5
+            continue
+          fi
+          
+          echo "Pod 名称: $POD_NAME"
+          STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
+          echo "Pod 状态: $STATUS"
+          
+          if [ "$STATUS" = "Running" ]; then
+            echo "Pod 已创建并运行"
             break
           fi
-          echo "等待中... $i"
-          sleep 5
+          
+          echo "=== Pod 详细状态 ==="
+          kubectl get pod -n {{ use_namespace }} $POD_NAME -o yaml | grep -A 10 "status:"
+          
+          echo "=== Pod 事件 ==="
+          kubectl get events -n {{ use_namespace }} --field-selector involvedObject.name=$POD_NAME --sort-by='.lastTimestamp'
+          
+          echo "=== Pod 详细信息 ==="
+          kubectl describe pod -n {{ use_namespace }} $POD_NAME
+          
+          echo "=== Pod 日志 ==="
+          kubectl logs -n {{ use_namespace }} $POD_NAME || true
+          
+          sleep 10
         done
         
         echo -e "\n=== OpenSearch 部署状态 ==="
         echo "Pod 状态:"
-        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=opensearch
+        kubectl get pods -n {{ use_namespace }} -l app=opensearch -o wide
+        
         echo -e "\nService 状态:"
-        /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=opensearch
+        kubectl get svc -n {{ use_namespace }} -l app=opensearch
         
         echo -e "\n=== 访问地址 ==="
-        NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+        NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
         echo "http://$NODE_IP:{{ use_nodeport }}"
       register: deploy_result
 
