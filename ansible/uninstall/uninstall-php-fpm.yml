@@ -3,77 +3,42 @@
   hosts: all
   gather_facts: no
   vars:
-    namespaces:
-      - magento-1
-      - magento-2
-      - magento-3
+    use_namespace: "{{ namespace | default('default') }}"
+
   tasks:
     - name: 显示卸载信息
       debug:
-        msg: "准备从以下命名空间卸载 PHP-FPM: {{ namespaces | join(', ') }}"
+        msg: "准备从命名空间 {{ use_namespace }} 卸载 PHP-FPM"
 
-    - name: 卸载每个命名空间中的 PHP-FPM
+    - name: 强制删除 PHP-FPM Pod
       shell: |
         set -x
-        echo "=== 开始卸载命名空间 {{ item }} 中的 PHP-FPM ==="
+        echo "=== 开始卸载 PHP-FPM ==="
         
-        echo "强制删除 Pod..."
-        PODS=$(kubectl get pods -n {{ item }} -l app=php-fpm -o name)
-        if [ ! -z "$PODS" ]; then
-          kubectl delete $PODS -n {{ item }} --force --grace-period=0 || true
-        fi
+        # 获取 k3s 路径
+        K3S_PATH=$(which k3s || echo "/usr/local/bin/k3s")
         
-        echo "强制删除 Deployment..."
-        kubectl delete deployment php-fpm -n {{ item }} --force --grace-period=0 || true
+        # 强制删除 Pod
+        $K3S_PATH kubectl delete pod -n {{ use_namespace }} -l app=php-fpm --force --grace-period=0 || true
         
-        echo "强制删除 Service..."
-        kubectl delete service php-fpm -n {{ item }} --force --grace-period=0 || true
+        # 删除 Deployment
+        $K3S_PATH kubectl delete deployment -n {{ use_namespace }} php-fpm || true
         
-        echo "等待资源删除..."
-        for i in {1..6}; do
-          echo "检查剩余资源 (尝试 $i/6)..."
-          
-          PODS=$(kubectl get pods -n {{ item }} -l app=php-fpm -o name)
-          DEPLOYMENTS=$(kubectl get deployment -n {{ item }} -l app=php-fpm -o name)
-          SERVICES=$(kubectl get service -n {{ item }} -l app=php-fpm -o name)
-          
-          if [ -z "$PODS" ] && [ -z "$DEPLOYMENTS" ] && [ -z "$SERVICES" ]; then
-            echo "所有资源已成功删除"
-            break
-          fi
-          
-          if [ ! -z "$PODS" ]; then
-            echo "仍有 Pod 存在:"
-            kubectl get pods -n {{ item }} -l app=php-fpm -o wide
-            kubectl delete $PODS -n {{ item }} --force --grace-period=0 || true
-          fi
-          
-          if [ ! -z "$DEPLOYMENTS" ]; then
-            echo "仍有 Deployment 存在:"
-            kubectl get deployment -n {{ item }} -l app=php-fpm
-            kubectl delete $DEPLOYMENTS -n {{ item }} --force --grace-period=0 || true
-          fi
-          
-          if [ ! -z "$SERVICES" ]; then
-            echo "仍有 Service 存在:"
-            kubectl get service -n {{ item }} -l app=php-fpm
-            kubectl delete $SERVICES -n {{ item }} --force --grace-period=0 || true
-          fi
-          
-          sleep 10
-        done
+        # 删除 Service
+        $K3S_PATH kubectl delete service -n {{ use_namespace }} php-fpm || true
         
-        echo "=== 最终检查 ==="
-        echo "Pods:"
-        kubectl get pods -n {{ item }} -l app=php-fpm -o wide
-        echo "Deployments:"
-        kubectl get deployment -n {{ item }} -l app=php-fpm
-        echo "Services:"
-        kubectl get svc -n {{ item }} -l app=php-fpm
-      register: uninstall_result
-      loop: "{{ namespaces }}"
+        echo "等待资源清理完成..."
+        sleep 5
+        
+        echo -e "\n=== 清理结果 ==="
+        echo "Pod 状态:"
+        $K3S_PATH kubectl get pods -n {{ use_namespace }} -l app=php-fpm
+        echo -e "\nDeployment 状态:"
+        $K3S_PATH kubectl get deployment -n {{ use_namespace }} php-fpm
+        echo -e "\nService 状态:"
+        $K3S_PATH kubectl get service -n {{ use_namespace }} php-fpm
+      register: cleanup_result
 
-    - name: 显示卸载结果
+    - name: 显示清理结果
       debug:
-        msg: "{{ item.stdout_lines }}"
-      loop: "{{ uninstall_result.results }}" 
+        msg: "{{ cleanup_result.stdout_lines }}" 
