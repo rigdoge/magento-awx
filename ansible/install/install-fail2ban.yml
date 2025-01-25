@@ -1,0 +1,58 @@
+---
+- name: 安装 fail2ban
+  hosts: all
+  gather_facts: no
+  become: yes  # 使用 sudo 权限
+  
+  tasks:
+    - name: 安装 fail2ban
+      shell: |
+        set -x
+        echo "=== 安装 fail2ban ==="
+        
+        # 安装 fail2ban
+        apt-get update
+        apt-get install -y fail2ban
+        
+        # 创建配置文件
+        cat > /etc/fail2ban/jail.local << 'EOF'
+        [DEFAULT]
+        # 封禁时间（秒）
+        bantime = 3600
+        
+        # 检测时间范围（秒）
+        findtime = 600
+        
+        # 允许失败次数
+        maxretry = 5
+        
+        # 忽略的 IP
+        ignoreip = 127.0.0.1/8
+        
+        # 动作
+        banaction = iptables-multiport
+        
+        [sshd]
+        enabled = true
+        port = ssh
+        filter = sshd
+        logpath = /var/log/auth.log
+        
+        [nginx-http-auth]
+        enabled = true
+        filter = nginx-http-auth
+        port = http,https
+        logpath = /var/log/nginx/error.log
+        EOF
+        
+        # 启动服务
+        systemctl enable fail2ban
+        systemctl restart fail2ban
+        
+        # 检查状态
+        systemctl status fail2ban
+      register: install_result
+      
+    - name: 显示安装结果
+      debug:
+        msg: "{{ install_result.stdout_lines }}" 
