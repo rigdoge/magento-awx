@@ -71,21 +71,34 @@
         user = www-data
         group = www-data
         
-        ; 动态进程管理
+        ; 动态进程管理 - Magento 2 优化
         pm = dynamic
-        pm.max_children = {{ max_children }}
-        pm.start_servers = {{ start_servers }}
-        pm.min_spare_servers = {{ min_spare_servers }}
-        pm.max_spare_servers = {{ max_spare_servers }}
-        pm.max_requests = {{ max_requests }}
+        pm.max_children = {{ max_children }}      ; 根据服务器内存调整：(Total RAM - Reserved RAM) / Process Size
+        pm.start_servers = {{ start_servers }}    ; 通常设置为 max_children 的 10%
+        pm.min_spare_servers = {{ min_spare_servers }}  ; 与 start_servers 相同
+        pm.max_spare_servers = {{ max_spare_servers }}  ; 通常设置为 max_children 的 70%
+        pm.max_requests = {{ max_requests }}      ; 防止内存泄漏
         
-        ; 慢日志
-        request_slowlog_timeout = 5s
+        ; 请求超时设置 - Magento 2 优化
+        request_terminate_timeout = 600s          ; 长时间运行的进程（如导入）
+        request_slowlog_timeout = 10s             ; Magento 2 后台操作可能较慢
         slowlog = /proc/self/fd/2
         
         ; 错误日志
         php_admin_flag[log_errors] = on
         php_admin_value[error_log] = /proc/self/fd/2
+        
+        ; 缓冲区设置 - Magento 2 优化
+        php_admin_value[memory_limit] = 2G        ; Magento 2 推荐
+        php_admin_value[max_execution_time] = 600 ; 长时间运行的进程
+        php_admin_value[max_input_time] = 600     ; 文件上传等操作
+        php_admin_value[post_max_size] = 64M      ; 大文件上传
+        php_admin_value[upload_max_filesize] = 64M ; 大文件上传
+        
+        ; 会话处理 - Magento 2 优化
+        php_value[session.gc_maxlifetime] = 86400  ; 会话过期时间
+        php_value[session.gc_probability] = 1
+        php_value[session.gc_divisor] = 1000
         
         ; 其他优化
         pm.process_idle_timeout = 10s
@@ -97,13 +110,23 @@
         env[HOSTNAME] = $HOSTNAME
         env[PATH] = /usr/local/bin:/usr/bin:/bin
         
-        ; 缓存设置
-        php_admin_value[opcache.memory_consumption] = 256
-        php_admin_value[opcache.interned_strings_buffer] = 16
-        php_admin_value[opcache.max_accelerated_files] = 60000
-        php_admin_value[opcache.revalidate_freq] = 2
+        ; OPcache 设置 - Magento 2 优化
+        php_admin_value[opcache.memory_consumption] = 512      ; 更大的缓存
+        php_admin_value[opcache.interned_strings_buffer] = 32  ; 更多字符串缓存
+        php_admin_value[opcache.max_accelerated_files] = 60000 ; Magento 2 有很多文件
+        php_admin_value[opcache.revalidate_freq] = 2          ; 生产环境推荐
         php_admin_value[opcache.fast_shutdown] = 1
-        php_admin_value[opcache.enable_cli] = 1
+        php_admin_value[opcache.enable_cli] = 1               ; CLI 模式也启用缓存
+        php_admin_value[opcache.save_comments] = 1            ; Magento 2 需要注释
+        php_admin_value[opcache.enable_file_override] = 0     ; 生产环境推荐
+        php_admin_value[opcache.validate_timestamps] = 0      ; 生产环境推荐
+        
+        ; Realpath 缓存 - Magento 2 优化
+        php_admin_value[realpath_cache_size] = 10M
+        php_admin_value[realpath_cache_ttl] = 7200
+        
+        ; 输入变量限制 - Magento 2 优化
+        php_admin_value[max_input_vars] = 10000    ; 复杂表单提交
         EOC
         
         # 验证配置
