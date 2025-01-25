@@ -6,9 +6,19 @@
     use_namespace: "{{ namespace | default('magento-shared') }}"
     use_nodeport: "{{ nodeport | default('30900') }}"
   tasks:
+    - name: 显示配置信息
+      debug:
+        msg: 
+          - "使用以下配置安装 PHP-FPM:"
+          - "命名空间: {{ use_namespace }}"
+          - "NodePort: {{ use_nodeport }}"
+
     - name: 创建命名空间
       shell: |
-        kubectl create namespace {{ use_namespace }} || true
+        echo "=== 检查命名空间 ==="
+        echo "当前命名空间: {{ use_namespace }}"
+        kubectl get namespace {{ use_namespace }} || kubectl create namespace {{ use_namespace }}
+        echo "命名空间就绪"
       register: namespace_result
 
     - name: 创建 PHP-FPM 配置
@@ -158,11 +168,13 @@
     - name: 应用 PHP-FPM 配置
       shell: |
         echo "=== 开始部署 PHP-FPM ==="
+        echo "部署到命名空间: {{ use_namespace }}"
         kubectl apply -f /tmp/php-fpm.yaml
         
         echo "等待 Pod 创建..."
         for i in $(seq 1 30); do
           echo "检查 Pod 创建进度... $i/30"
+          echo "在命名空间 {{ use_namespace }} 中查找 Pod..."
           POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
           if [ -z "$POD_NAME" ]; then
             echo "Pod 名称为空，继续等待..."
