@@ -5,17 +5,22 @@
   vars:
     use_namespace: "hawk"  # 直接使用固定的命名空间
   tasks:
+    - name: 获取 k3s 路径
+      shell: which k3s || echo "/usr/local/bin/k3s"
+      register: k3s_path
+      changed_when: false
+
     - name: 强制删除 PHP-FPM Pod
       shell: |
         echo "=== 开始清理 PHP-FPM Pod ==="
         # 强制删除 Pod
-        /usr/local/bin/k3s kubectl delete pod -n {{ use_namespace }} -l app=php-fpm --force --grace-period=0 || true
+        {{ k3s_path.stdout }} kubectl delete pod -n {{ use_namespace }} -l app=php-fpm --force --grace-period=0 || true
         
         # 删除 Deployment
-        /usr/local/bin/k3s kubectl delete deployment -n {{ use_namespace }} php-fpm || true
+        {{ k3s_path.stdout }} kubectl delete deployment -n {{ use_namespace }} php-fpm || true
         
         # 删除 Service
-        /usr/local/bin/k3s kubectl delete service -n {{ use_namespace }} php-fpm || true
+        {{ k3s_path.stdout }} kubectl delete service -n {{ use_namespace }} php-fpm || true
         
         # 等待资源完全删除
         echo "等待资源清理完成..."
@@ -24,13 +29,13 @@
         # 检查清理结果
         echo -e "\n=== 清理结果 ==="
         echo "Pod 状态:"
-        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm
+        {{ k3s_path.stdout }} kubectl get pods -n {{ use_namespace }} -l app=php-fpm
         
         echo -e "\nDeployment 状态:"
-        /usr/local/bin/k3s kubectl get deployment -n {{ use_namespace }} php-fpm
+        {{ k3s_path.stdout }} kubectl get deployment -n {{ use_namespace }} php-fpm
         
         echo -e "\nService 状态:"
-        /usr/local/bin/k3s kubectl get service -n {{ use_namespace }} php-fpm
+        {{ k3s_path.stdout }} kubectl get service -n {{ use_namespace }} php-fpm
       register: cleanup_result
 
     - name: 显示清理结果
