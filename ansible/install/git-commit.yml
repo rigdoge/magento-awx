@@ -1,0 +1,43 @@
+---
+- name: 自动提交代码到 GitHub
+  hosts: all
+  gather_facts: no
+  vars:
+    commit_message: "{{ message | default('更新配置') }}"
+    git_branch: "{{ branch | default('main') }}"
+
+  tasks:
+    - name: 检查工作目录
+      shell: |
+        if [ ! -d "/workspace/.git" ]; then
+          echo "错误: /workspace 不是 Git 仓库"
+          exit 1
+        fi
+
+    - name: 提交代码
+      shell: |
+        cd /workspace
+        
+        # 显示当前状态
+        echo "=== 当前 Git 状态 ==="
+        git status
+        
+        # 添加所有更改
+        git add .
+        
+        # 提交更改
+        git commit -m "{{ commit_message }}"
+        
+        # 推送到远程仓库
+        git push origin {{ git_branch }}
+        
+        echo -e "\n=== 提交后状态 ==="
+        git status
+        
+        echo -e "\n=== 最近提交 ==="
+        git log -3 --oneline
+      register: commit_result
+
+    - name: 显示结果
+      debug:
+        msg: "{{ commit_result.stdout_lines }}" 

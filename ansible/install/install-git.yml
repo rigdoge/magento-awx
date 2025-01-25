@@ -1,0 +1,76 @@
+---
+- name: 安装和配置 Git
+  hosts: all
+  gather_facts: no
+  vars:
+    git_user_name: "{{ git_user | default('awx') }}"
+    git_user_email: "{{ git_email | default('awx@example.com') }}"
+    git_repo_url: "{{ repo_url | default('') }}"
+    git_branch: "{{ branch | default('main') }}"
+
+  tasks:
+    - name: 安装 Git
+      shell: |
+        if ! command -v git &> /dev/null; then
+          apt-get update
+          apt-get install -y git
+        else
+          echo "Git 已安装"
+        fi
+
+    - name: 配置 Git 用户信息
+      shell: |
+        git config --global user.name "{{ git_user_name }}"
+        git config --global user.email "{{ git_user_email }}"
+        git config --global --list
+
+    - name: 创建 SSH 密钥(如果不存在)
+      shell: |
+        if [ ! -f ~/.ssh/id_rsa ]; then
+          ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
+        fi
+        cat ~/.ssh/id_rsa.pub
+
+    - name: 克隆或更新代码仓库
+      shell: |
+        if [ -n "{{ git_repo_url }}" ]; then
+          if [ -d "/workspace" ]; then
+            cd /workspace
+            if [ -d ".git" ]; then
+              echo "更新仓库..."
+              git fetch origin
+              git checkout {{ git_branch }}
+              git pull origin {{ git_branch }}
+            else
+              echo "克隆仓库..."
+              git clone -b {{ git_branch }} {{ git_repo_url }} .
+            fi
+          else
+            echo "错误: /workspace 目录不存在"
+            exit 1
+          fi
+        else
+          echo "未提供 git_repo_url,跳过克隆/更新操作"
+        fi
+
+    - name: 显示 Git 状态
+      shell: |
+        if [ -d "/workspace/.git" ]; then
+          cd /workspace
+          echo "=== Git 配置 ==="
+          git config --list
+          
+          echo -e "\n=== Git 状态 ==="
+          git status
+          
+          echo -e "\n=== 当前分支 ==="
+          git branch
+          
+          echo -e "\n=== 最近提交 ==="
+          git log -3 --oneline
+        fi
+      register: git_status
+
+    - name: 显示结果
+      debug:
+        msg: "{{ git_status.stdout_lines }}" 

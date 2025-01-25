@@ -4,279 +4,185 @@
   gather_facts: no
   vars:
     use_namespace: "{{ namespace | default('default') }}"
-    use_nodeport: "{{ nodeport | default('30900') }}"
-  tasks:
-    - name: 显示配置信息
-      debug:
-        msg: 
-          - "使用以下配置安装 PHP-FPM:"
-          - "命名空间: {{ use_namespace }}"
-          - "NodePort: {{ use_nodeport }}"
+    use_nodeport: "{{ nodeport | default('9000') }}"
 
+  tasks:
     - name: 检查命名空间
       shell: |
         if [ "{{ use_namespace }}" != "default" ]; then
-          echo "=== 检查命名空间 ==="
-          echo "当前命名空间: {{ use_namespace }}"
-          kubectl get namespace {{ use_namespace }} || kubectl create namespace {{ use_namespace }}
-          echo "命名空间就绪"
+          echo "创建命名空间: {{ use_namespace }}"
+          kubectl create namespace {{ use_namespace }} || true
         else
           echo "使用默认命名空间"
         fi
-      register: namespace_result
 
     - name: 创建 PHP-FPM 配置
-      copy:
-        dest: /tmp/php-fpm.yaml
-        content: |
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: php-fpm
-            namespace: {{ use_namespace }}
-            labels:
+      shell: |
+        cat > /tmp/php-fpm.yaml << 'EOF'
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: php-fpm
+          namespace: {{ use_namespace }}
+        spec:
+          selector:
+            matchLabels:
               app: php-fpm
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
+          replicas: 1
+          template:
+            metadata:
+              labels:
                 app: php-fpm
-            template:
-              metadata:
-                labels:
-                  app: php-fpm
-              spec:
-                initContainers:
-                - name: init-php
-                  image: php:8.3-fpm
-                  command: ["/bin/sh", "-c"]
-                  args:
-                    - |
-                      set -ex
-                      echo "开始安装 PHP 扩展..."
-                      
-                      echo "检查系统信息..."
-                      uname -a
-                      df -h
-                      free -h || true
-                      
-                      echo "检查 PHP 信息..."
-                      php -v
-                      php -m
-                      
-                      echo "安装基础依赖..."
-                      apt-get update
-                      apt-get install -y \
-                        libfreetype6-dev \
-                        libjpeg62-turbo-dev \
-                        libpng-dev \
-                        libicu-dev \
-                        libxml2-dev \
-                        libxslt1-dev \
-                        libzip-dev \
-                        libonig-dev \
-                        libsodium-dev \
-                        libcurl4-openssl-dev
-                      rm -rf /var/lib/apt/lists/*
-                      
-                      echo "配置 GD..."
-                      docker-php-ext-configure gd --with-freetype --with-jpeg
-                      
-                      echo "分批安装扩展..."
-                      for ext in bcmath ctype curl dom fileinfo gd iconv intl mbstring pdo_mysql simplexml soap xml xmlwriter xsl sockets sodium tokenizer zip; do
-                        echo "安装扩展: $ext"
-                        docker-php-ext-install -j$(nproc) $ext
-                        echo "扩展 $ext 安装完成"
-                      done
-                      
-                      echo "配置 OPcache..."
-                      docker-php-ext-enable opcache
-                      {
-                        echo "opcache.enable=1"
-                        echo "opcache.enable_cli=1"
-                        echo "opcache.memory_consumption=128"
-                        echo "opcache.interned_strings_buffer=8"
-                        echo "opcache.max_accelerated_files=4000"
-                        echo "opcache.revalidate_freq=60"
-                        echo "opcache.fast_shutdown=1"
-                      } > /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
-                      
-                      echo "配置 PHP-FPM..."
-                      {
-                        echo "[global]"
-                        echo "error_log = /proc/self/fd/2"
-                        echo "daemonize = no"
-                        echo "include=/usr/local/etc/php-fpm.d/*.conf"
-                        
-                        echo "[www]"
-                        echo "access.log = /proc/self/fd/2"
-                        echo "clear_env = no"
-                        echo "catch_workers_output = yes"
-                        echo "decorate_workers_output = no"
-                        
-                        echo "; 动态进程管理"
-                        echo "pm = dynamic"
-                        echo "pm.max_children = 5"
-                        echo "pm.start_servers = 2"
-                        echo "pm.min_spare_servers = 1"
-                        echo "pm.max_spare_servers = 3"
-                        
-                        echo "; 状态页面"
-                        echo "pm.status_path = /status"
-                        
-                        echo "; 慢日志"
-                        echo "slowlog = /proc/self/fd/2"
-                        echo "request_slowlog_timeout = 10s"
-                        
-                        echo "; 超时设置"
-                        echo "request_terminate_timeout = 300s"
-                        echo "rlimit_files = 65535"
-                      } > /usr/local/etc/php-fpm.d/www.conf
-                      
-                      echo "创建示例站点配置..."
-                      {
-                        echo "[site1]"
-                        echo "user = www-data"
-                        echo "group = www-data"
-                        echo "listen = 9001"
-                        echo "pm = dynamic"
-                        echo "pm.max_children = 3"
-                        echo "pm.start_servers = 1"
-                        echo "pm.min_spare_servers = 1"
-                        echo "pm.max_spare_servers = 2"
-                        echo "php_admin_value[memory_limit] = 128M"
-                      } > /usr/local/etc/php-fpm.d/site1.conf
-                      
-                      {
-                        echo "[site2]"
-                        echo "user = www-data"
-                        echo "group = www-data"
-                        echo "listen = 9002"
-                        echo "pm = dynamic"
-                        echo "pm.max_children = 3"
-                        echo "pm.start_servers = 1"
-                        echo "pm.min_spare_servers = 1"
-                        echo "pm.max_spare_servers = 2"
-                        echo "php_admin_value[memory_limit] = 128M"
-                      } > /usr/local/etc/php-fpm.d/site2.conf
-                      
-                      echo "检查最终 PHP 配置..."
-                      php -v
-                      php -m
-                      
-                      echo "所有扩展安装完成"
-                  resources:
-                    requests:
-                      memory: "512Mi"
-                      cpu: "500m"
-                    limits:
-                      memory: "1Gi"
-                      cpu: "1000m"
-                containers:
-                - name: php-fpm
-                  image: php:8.3-fpm
-                  ports:
-                  - containerPort: 9000
-                    name: fpm
-                  readinessProbe:
-                    tcpSocket:
-                      port: 9000
-                    initialDelaySeconds: 10
-                    periodSeconds: 10
-                  livenessProbe:
-                    tcpSocket:
-                      port: 9000
-                    initialDelaySeconds: 20
-                    periodSeconds: 20
-                  resources:
-                    requests:
-                      memory: "256Mi"
-                      cpu: "250m"
-                    limits:
-                      memory: "512Mi"
-                      cpu: "500m"
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: php-fpm
-            namespace: {{ use_namespace }}
-            labels:
-              app: php-fpm
-          spec:
-            type: NodePort
-            ports:
-            - port: 9000
-              targetPort: 9000
-              nodePort: {{ use_nodeport }}
-              name: fpm-default
-            - port: 9001
-              targetPort: 9001
-              nodePort: {{ use_nodeport | int + 1 }}
-              name: fpm-site1
-            - port: 9002
-              targetPort: 9002
-              nodePort: {{ use_nodeport | int + 2 }}
-              name: fpm-site2
-            selector:
-              app: php-fpm
+            spec:
+              initContainers:
+              - name: init-php
+                image: php:8.3-fpm
+                command: 
+                - /bin/sh
+                - -c
+                - |
+                  set -ex
+                  # 安装系统依赖
+                  apt-get update
+                  apt-get install -y --no-install-recommends \
+                    libfreetype6-dev \
+                    libjpeg62-turbo-dev \
+                    libpng-dev \
+                    libzip-dev \
+                    libxml2-dev \
+                    libxslt1-dev \
+                    libicu-dev \
+                    libonig-dev \
+                    libsodium-dev \
+                    libcurl4-openssl-dev \
+                    unzip \
+                    && rm -rf /var/lib/apt/lists/*
 
-    - name: 清理旧的部署
+                  # 配置并安装 PHP 扩展
+                  docker-php-ext-configure gd --with-freetype --with-jpeg
+                  docker-php-ext-install -j$(nproc) \
+                    bcmath \
+                    ctype \
+                    curl \
+                    dom \
+                    fileinfo \
+                    gd \
+                    iconv \
+                    intl \
+                    mbstring \
+                    opcache \
+                    pdo_mysql \
+                    simplexml \
+                    soap \
+                    sockets \
+                    sodium \
+                    tokenizer \
+                    xml \
+                    xmlwriter \
+                    xsl \
+                    zip
+
+                  # 配置 OPcache
+                  echo "opcache.enable=1" >> /usr/local/etc/php/conf.d/opcache.ini
+                  echo "opcache.enable_cli=1" >> /usr/local/etc/php/conf.d/opcache.ini
+                  echo "opcache.memory_consumption=128" >> /usr/local/etc/php/conf.d/opcache.ini
+                  echo "opcache.interned_strings_buffer=8" >> /usr/local/etc/php/conf.d/opcache.ini
+                  echo "opcache.max_accelerated_files=4000" >> /usr/local/etc/php/conf.d/opcache.ini
+                  echo "opcache.revalidate_freq=60" >> /usr/local/etc/php/conf.d/opcache.ini
+                  echo "opcache.fast_shutdown=1" >> /usr/local/etc/php/conf.d/opcache.ini
+
+                  # 配置 PHP-FPM
+                  echo "pm = dynamic" >> /usr/local/etc/php-fpm.d/www.conf
+                  echo "pm.max_children = 5" >> /usr/local/etc/php-fpm.d/www.conf
+                  echo "pm.start_servers = 2" >> /usr/local/etc/php-fpm.d/www.conf
+                  echo "pm.min_spare_servers = 1" >> /usr/local/etc/php-fpm.d/www.conf
+                  echo "pm.max_spare_servers = 3" >> /usr/local/etc/php-fpm.d/www.conf
+                resources:
+                  requests:
+                    cpu: "500m"
+                    memory: "512Mi"
+                  limits:
+                    cpu: "1"
+                    memory: "1Gi"
+              containers:
+              - name: php-fpm
+                image: php:8.3-fpm
+                ports:
+                - containerPort: 9000
+                resources:
+                  requests:
+                    cpu: "500m"
+                    memory: "512Mi"
+                  limits:
+                    cpu: "1"
+                    memory: "1Gi"
+                readinessProbe:
+                  tcpSocket:
+                    port: 9000
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+                livenessProbe:
+                  tcpSocket:
+                    port: 9000
+                  initialDelaySeconds: 20
+                  periodSeconds: 20
+                volumeMounts:
+                - name: php-config
+                  mountPath: /usr/local/etc/php/conf.d
+              volumes:
+              - name: php-config
+                emptyDir: {}
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: php-fpm
+          namespace: {{ use_namespace }}
+        spec:
+          selector:
+            app: php-fpm
+          ports:
+          - name: fpm
+            port: 9000
+            targetPort: 9000
+            nodePort: {{ use_nodeport }}
+          type: NodePort
+        EOF
+
+    - name: 清理旧部署
       shell: |
         kubectl delete -f /tmp/php-fpm.yaml || true
+        echo "等待旧资源清理完成..."
         sleep 5
-      register: cleanup_result
 
     - name: 应用 PHP-FPM 配置
       shell: |
-        echo "=== 开始部署 PHP-FPM ==="
-        echo "部署到命名空间: {{ use_namespace }}"
         kubectl apply -f /tmp/php-fpm.yaml
-        
         echo "等待 Pod 创建..."
+        
         for i in $(seq 1 30); do
-          echo "检查 Pod 创建进度... $i/30"
-          echo "在命名空间 {{ use_namespace }} 中查找 Pod..."
-          POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
-          if [ -z "$POD_NAME" ]; then
-            echo "Pod 名称为空，继续等待..."
-            sleep 5
-            continue
-          fi
-          
-          echo "Pod 名称: $POD_NAME"
-          STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
-          echo "Pod 状态: $STATUS"
-          
-          if [ "$STATUS" = "Running" ]; then
-            echo "Pod 已创建并运行"
+          echo "检查 Pod 创建进度... 第 $i 次"
+          if kubectl get pods -n {{ use_namespace }} -l app=php-fpm --no-headers | grep -q .; then
+            echo "Pod 已创建"
             break
           fi
-          
-          echo "=== Pod 详细状态 ==="
-          kubectl get pod -n {{ use_namespace }} $POD_NAME -o yaml
-          
-          echo "=== Pod 事件 ==="
-          kubectl get events -n {{ use_namespace }} --field-selector involvedObject.name=$POD_NAME --sort-by='.lastTimestamp'
-          
-          echo "=== 节点资源使用情况 ==="
-          kubectl describe node
-          
-          echo "=== 初始化容器日志 ==="
-          kubectl logs -n {{ use_namespace }} $POD_NAME -c init-php || true
-          
-          echo "=== PHP-FPM 容器日志 ==="
-          kubectl logs -n {{ use_namespace }} $POD_NAME || true
-          
           sleep 10
         done
         
-        echo -e "\n=== PHP-FPM 部署状态 ==="
-        echo "Pod 状态:"
-        kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o wide
+        POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
+        echo "Pod 名称: $POD_NAME"
         
-        echo -e "\nService 状态:"
-        kubectl get svc -n {{ use_namespace }} -l app=php-fpm
+        for i in $(seq 1 30); do
+          echo "检查 Pod 状态... 第 $i 次"
+          STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
+          if [ "$STATUS" = "Running" ]; then
+            echo "Pod 已就绪"
+            break
+          fi
+          echo "当前状态: $STATUS"
+          kubectl describe pod -n {{ use_namespace }} $POD_NAME
+          sleep 10
+        done
       register: deploy_result
 
     - name: 显示部署结果

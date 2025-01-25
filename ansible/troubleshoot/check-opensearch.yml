@@ -24,16 +24,28 @@
         echo "Pod 名称: $POD_NAME"
         
         echo "=== Pod 详细信息 ==="
-        kubectl describe pod -n "$NAMESPACE" "$POD_NAME" | grep -E "^(Name:|Namespace:|Status:|IP:|Node:|Conditions:|Events:)"
+        kubectl describe pod -n "$NAMESPACE" "$POD_NAME"
         
-        echo "=== Pod 日志（最后20行）==="
-        kubectl logs -n "$NAMESPACE" "$POD_NAME" --tail=20
+        echo "=== Pod 完整日志 ==="
+        kubectl logs -n "$NAMESPACE" "$POD_NAME"
         
-        echo "=== 系统资源使用情况 ==="
+        echo "=== 检查 Pod 权限 ==="
+        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- ls -la /usr/share/opensearch/data || true
+        
+        echo "=== 检查系统资源 ==="
+        echo "节点资源使用情况:"
+        kubectl top nodes || true
+        echo "Pod 资源使用情况:"
         kubectl top pod -n "$NAMESPACE" "$POD_NAME" || true
         
         echo "=== 检查服务状态 ==="
-        kubectl get svc -n "$NAMESPACE" -l app=opensearch
+        kubectl get svc -n "$NAMESPACE" -l app=opensearch -o wide
+        
+        echo "=== 检查 OpenSearch 配置 ==="
+        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- cat /usr/share/opensearch/config/opensearch.yml || true
+        
+        echo "=== 检查 JVM 配置 ==="
+        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- cat /usr/share/opensearch/config/jvm.options || true
         
         echo "=== 检查 OpenSearch 健康状态 ==="
         POD_IP=$(kubectl get pod -n "$NAMESPACE" "$POD_NAME" -o jsonpath='{.status.podIP}')
@@ -41,29 +53,30 @@
           curl -s "http://$POD_IP:9200/_cluster/health" || echo "无法连接到 OpenSearch"
         fi
         
-        echo "=== 是否需要重启？ ==="
-        read -p "是否要重启 Pod？(y/n) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-          echo "=== 尝试重启 Pod ==="
-          kubectl delete pod -n "$NAMESPACE" "$POD_NAME" --force --grace-period=0
-          
-          echo "等待新 Pod 创建..."
-          sleep 10
-          
-          echo "=== 检查新 Pod 状态 ==="
-          NEW_POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app=opensearch -o jsonpath='{.items[0].metadata.name}')
-          kubectl get pod -n "$NAMESPACE" "$NEW_POD_NAME" -o wide
-          
-          echo "=== 等待 Pod 就绪 ==="
-          kubectl wait --for=condition=ready pod -n "$NAMESPACE" -l app=opensearch --timeout=300s || true
-          
-          echo "=== 最终状态 ==="
-          kubectl get pods -n "$NAMESPACE" -l app=opensearch -o wide
-          
-          echo "=== 检查新 Pod 日志 ==="
-          kubectl logs -n "$NAMESPACE" "$NEW_POD_NAME" --tail=20
-        fi
+        echo "=== 是否需要修复？ ==="
+        echo "1. 重启 Pod"
+        echo "2. 修复权限"
+        echo "3. 退出"
+        read -p "请选择操作 (1-3): " choice
+        case $choice in
+          1)
+            echo "=== 重启 Pod ==="
+            kubectl delete pod -n "$NAMESPACE" "$POD_NAME" --force --grace-period=0
+            echo "等待新 Pod 创建..."
+            sleep 10
+            NEW_POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app=opensearch -o jsonpath='{.items[0].metadata.name}')
+            kubectl wait --for=condition=ready pod -n "$NAMESPACE" -l app=opensearch --timeout=300s || true
+            echo "=== 新 Pod 状态 ==="
+            kubectl get pod -n "$NAMESPACE" "$NEW_POD_NAME" -o wide
+            ;;
+          2)
+            echo "=== 修复权限 ==="
+            kubectl exec -n "$NAMESPACE" "$POD_NAME" -- chown -R 1000:1000 /usr/share/opensearch/data || true
+            ;;
+          3)
+            echo "退出诊断"
+            ;;
+        esac
       register: check_result
 
     - name: 显示诊断结果
