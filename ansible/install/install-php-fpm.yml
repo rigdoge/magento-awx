@@ -36,12 +36,16 @@
               labels:
                 app: php-fpm
             spec:
+              securityContext:
+                runAsUser: 0
+                runAsGroup: 0
+                fsGroup: 0
               containers:
               - name: php-fpm
                 image: php:8.3-fpm
                 securityContext:
-                  runAsUser: 33  # www-data 用户
-                  runAsGroup: 33  # www-data 组
+                  privileged: true
+                  allowPrivilegeEscalation: true
                 ports:
                 - containerPort: 9000
                 resources:
