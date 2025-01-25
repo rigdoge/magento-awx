@@ -67,17 +67,21 @@
         POD_NAME="{{ pod_name.stdout }}"
         echo "=== 更新包管理器 ==="
         
+        # 切换到 root 用户
+        echo "切换到 root 用户..."
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- su root << 'EOF'
         # 创建必要的目录
         echo "创建必要的目录..."
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- mkdir -p /var/lib/apt/lists/partial
+        mkdir -p /var/lib/apt/lists/partial
         
         # 设置目录权限
         echo "设置目录权限..."
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- chown -R root:root /var/lib/apt/lists
+        chown -R root:root /var/lib/apt/lists
         
         # 更新包管理器
         echo "执行更新..."
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- apt-get update
+        apt-get update
+        EOF
       register: update_result
 
     - name: 显示更新结果
@@ -89,7 +93,7 @@
         set -x  # 启用调试模式
         POD_NAME="{{ pod_name.stdout }}"
         echo "=== 安装系统依赖 ==="
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- apt-get install -y libicu-dev libzip-dev
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- su root -c "apt-get install -y libicu-dev libzip-dev"
       register: deps_result
 
     - name: 显示依赖安装结果
@@ -103,10 +107,10 @@
         echo "=== 安装 PHP 扩展 ==="
         
         echo "安装 PDO MySQL..."
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- docker-php-ext-install pdo_mysql
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- su root -c "docker-php-ext-install pdo_mysql"
         
         echo "安装 OPcache..."
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- docker-php-ext-install opcache
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- su root -c "docker-php-ext-install opcache"
       register: ext_result
 
     - name: 显示扩展安装结果
@@ -120,10 +124,10 @@
         echo "=== 配置 PHP ==="
         
         echo "创建配置目录..."
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- mkdir -p /usr/local/etc/php/conf.d
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- su root -c "mkdir -p /usr/local/etc/php/conf.d"
         
         echo "配置 OPcache..."
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c 'echo "opcache.enable=1
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- su root -c 'echo "opcache.enable=1
         opcache.memory_consumption=256
         opcache.max_accelerated_files=60000
         opcache.revalidate_freq=2
