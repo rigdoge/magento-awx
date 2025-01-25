@@ -30,12 +30,17 @@
 
 ```yaml
 ---
+# Kubernetes 命名空间配置
+namespace: awx                      # 替换为你的 Nginx 所在的命名空间
+
 # 域名配置
 domain_name: awx.tschenfeng.com    # 替换为你的域名
 
 # 邮箱配置（用于证书到期提醒）
-email_address: admin@tschenfeng.com  # 替换为你的邮箱
+email_address: ssl@tschenfeng.com   # 替换为你的邮箱
 ```
+
+> **注意**: 如果你的 Nginx 运行在特定的 Kubernetes 命名空间中，请确保设置正确的 `namespace` 变量。
 
 ### 3. 运行安装
 
