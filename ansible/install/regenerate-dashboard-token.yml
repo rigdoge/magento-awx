@@ -1,0 +1,54 @@
+---
+- name: 重新生成 Kubernetes Dashboard Token
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 删除旧的 ServiceAccount
+      shell: |
+        kubectl delete serviceaccount admin-user -n kubernetes-dashboard || true
+        kubectl delete clusterrolebinding admin-user || true
+      register: cleanup_result
+
+    - name: 创建新的 ServiceAccount
+      copy:
+        dest: /tmp/dashboard-user.yaml
+        content: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: admin-user
+            namespace: kubernetes-dashboard
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: admin-user
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cluster-admin
+          subjects:
+          - kind: ServiceAccount
+            name: admin-user
+            namespace: kubernetes-dashboard
+
+    - name: 应用配置
+      shell: |
+        kubectl apply -f /tmp/dashboard-user.yaml
+        sleep 5
+        
+        echo -e "\n=== Dashboard 访问信息 ===" > /tmp/dashboard-access.txt
+        echo "访问令牌:" >> /tmp/dashboard-access.txt
+        kubectl -n kubernetes-dashboard create token admin-user >> /tmp/dashboard-access.txt
+        
+        echo -e "\n访问地址:" >> /tmp/dashboard-access.txt
+        NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+        NODE_PORT=$(kubectl -n kubernetes-dashboard get svc kubernetes-dashboard -o jsonpath='{.spec.ports[0].nodePort}')
+        echo "https://$NODE_IP:$NODE_PORT" >> /tmp/dashboard-access.txt
+        
+        cat /tmp/dashboard-access.txt
+      register: token_result
+
+    - name: 显示访问信息
+      debug:
+        msg: "{{ token_result.stdout_lines }}" 
