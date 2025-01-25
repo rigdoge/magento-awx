@@ -140,36 +140,21 @@
         echo "检查源证书文件..."
         ls -la /etc/letsencrypt/live/{{ domain }}/
         
-        # 创建临时目录
-        echo "创建临时目录..."
-        TEMP_DIR=$(mktemp -d)
-        echo "临时目录: $TEMP_DIR"
-        
-        # 复制证书到临时目录
-        echo "复制证书到临时目录..."
-        cp -Lv /etc/letsencrypt/live/{{ domain }}/*.pem $TEMP_DIR/
-        ls -la $TEMP_DIR
-        
-        # 打包证书
-        echo "打包证书..."
-        cd $TEMP_DIR
-        tar czvf certs.tar.gz *.pem
-        ls -la certs.tar.gz
-        
         # 创建 Pod 中的目录
         echo "创建证书目录..."
         kubectl -n {{ namespace }} exec $POD_NAME -- mkdir -p /etc/letsencrypt/live/{{ domain }}
         
-        # 复制并解压证书
-        echo "复制并解压证书..."
-        kubectl -n {{ namespace }} cp $TEMP_DIR/certs.tar.gz {{ namespace }}/$POD_NAME:/tmp/
-        kubectl -n {{ namespace }} exec $POD_NAME -- ls -la /tmp/certs.tar.gz
-        kubectl -n {{ namespace }} exec $POD_NAME -- tar xzvf /tmp/certs.tar.gz -C /etc/letsencrypt/live/{{ domain }}/
-        kubectl -n {{ namespace }} exec $POD_NAME -- rm /tmp/certs.tar.gz
-        
-        # 清理临时目录
-        echo "清理临时文件..."
-        rm -rf $TEMP_DIR
+        # 直接复制证书文件
+        echo "复制证书文件..."
+        for cert in fullchain.pem privkey.pem chain.pem; do
+          echo "复制 $cert..."
+          # 检查源文件
+          ls -l /etc/letsencrypt/live/{{ domain }}/$cert
+          # 复制文件
+          kubectl -n {{ namespace }} cp /etc/letsencrypt/live/{{ domain }}/$cert {{ namespace }}/$POD_NAME:/etc/letsencrypt/live/{{ domain }}/$cert
+          # 验证目标文件
+          kubectl -n {{ namespace }} exec $POD_NAME -- ls -l /etc/letsencrypt/live/{{ domain }}/$cert
+        done
         
         # 验证复制结果
         echo "验证证书文件..."
