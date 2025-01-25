@@ -1,6 +1,6 @@
 ---
 - name: 检查 cert-manager 状态
-  hosts: k3s_master
+  hosts: all
   gather_facts: yes
   tasks:
     - name: 检查 cert-manager pods 状态
