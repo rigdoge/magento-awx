@@ -295,10 +295,6 @@
         echo "Webroot 目录内容："
         ls -la {{ webroot_path }}/.well-known/acme-challenge/
         
-        # 检查 certbot 日志
-        echo "之前的 certbot 日志："
-        tail -n 50 /var/log/letsencrypt/letsencrypt.log || true
-        
         # 申请证书
         certbot certonly \
           --webroot \
@@ -311,14 +307,26 @@
           -v \
           {% if use_staging %}--staging{% endif %}
         
-        # 显示详细日志
-        echo "最新的 certbot 日志："
-        tail -n 50 /var/log/letsencrypt/letsencrypt.log
+        # 立即检查证书
+        if ! certbot certificates | grep -q "{{ domain_name }}"; then
+          echo "证书申请失败！"
+          exit 1
+        fi
+        
+        echo "证书申请成功！"
       register: cert_result
       
     - name: 显示证书申请结果
       debug:
         msg: "{{ cert_result.stdout_lines + cert_result.stderr_lines }}"
+
+    - name: 确认证书存在
+      shell: |
+        if [ ! -f /etc/letsencrypt/live/{{ domain_name }}/fullchain.pem ]; then
+          echo "证书文件不存在！"
+          exit 1
+        fi
+      register: cert_check
 
     - name: 检查证书
       shell: certbot certificates
