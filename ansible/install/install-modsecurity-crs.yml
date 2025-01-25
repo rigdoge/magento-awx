@@ -1,0 +1,78 @@
+---
+- name: 安装 ModSecurity OWASP CRS 规则集
+  hosts: all
+  gather_facts: no
+  become: yes
+  
+  tasks:
+    - name: 安装 CRS
+      shell: |
+        set -x
+        echo "=== 安装 OWASP CRS ==="
+        
+        # 安装 Git
+        apt-get install -y git
+        
+        # 下载 CRS
+        cd /tmp
+        git clone https://github.com/coreruleset/coreruleset.git
+        
+        # 创建目录
+        mkdir -p /etc/nginx/modsecurity/crs
+        
+        # 复制文件
+        cp coreruleset/crs-setup.conf.example /etc/nginx/modsecurity/crs/setup.conf
+        cp -r coreruleset/rules /etc/nginx/modsecurity/crs/
+        
+        # 配置 CRS
+        cat > /etc/nginx/modsecurity/crs.conf << 'EOF'
+        # 包含 CRS 配置
+        Include /etc/nginx/modsecurity/crs/setup.conf
+        
+        # 包含所有规则
+        Include /etc/nginx/modsecurity/crs/rules/*.conf
+        EOF
+        
+        # 更新主配置
+        echo 'Include /etc/nginx/modsecurity/crs.conf' >> /etc/nginx/modsecurity/modsecurity.conf
+      register: install_result
+      
+    - name: 显示安装结果
+      debug:
+        msg: "{{ install_result.stdout_lines }}"
+    
+    - name: 配置 CRS
+      shell: |
+        set -x
+        echo "=== 配置 CRS ==="
+        
+        # 调整 CRS 配置
+        sed -i 's/SecDefaultAction "phase:1,log,auditlog,pass"/SecDefaultAction "phase:1,log,auditlog,deny,status:403"/' /etc/nginx/modsecurity/crs/setup.conf
+        sed -i 's/SecDefaultAction "phase:2,log,auditlog,pass"/SecDefaultAction "phase:2,log,auditlog,deny,status:403"/' /etc/nginx/modsecurity/crs/setup.conf
+        
+        # 设置检测阈值
+        sed -i 's/tx.paranoia_level=1/tx.paranoia_level=2/' /etc/nginx/modsecurity/crs/setup.conf
+      register: config_result
+      
+    - name: 显示配置结果
+      debug:
+        msg: "{{ config_result.stdout_lines }}"
+
+    - name: 重启 Nginx
+      shell: |
+        set -x
+        echo "=== 重启 Nginx ==="
+        
+        # 测试配置
+        nginx -t
+        
+        # 重启服务
+        systemctl restart nginx
+        
+        # 检查状态
+        systemctl status nginx
+      register: restart_result
+      
+    - name: 显示重启结果
+      debug:
+        msg: "{{ restart_result.stdout_lines }}" 

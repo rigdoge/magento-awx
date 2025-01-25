@@ -1,0 +1,73 @@
+---
+- name: 安装 ModSecurity 自定义规则
+  hosts: all
+  gather_facts: no
+  become: yes
+  
+  tasks:
+    - name: 创建自定义规则
+      shell: |
+        set -x
+        echo "=== 创建自定义规则 ==="
+        
+        # 创建目录
+        mkdir -p /etc/nginx/modsecurity/custom-rules
+        
+        # 创建白名单规则
+        cat > /etc/nginx/modsecurity/custom-rules/whitelist.conf << 'EOF'
+        # 允许特定 IP
+        SecRule REMOTE_ADDR "@ipMatch 192.168.1.0/24" \
+          "id:1000,phase:1,t:none,nolog,allow,ctl:ruleEngine=Off"
+        
+        # 允许健康检查
+        SecRule REQUEST_URI "@beginsWith /health" \
+          "id:1001,phase:1,t:none,nolog,allow,ctl:ruleEngine=Off"
+        EOF
+        
+        # 创建自定义拦截规则
+        cat > /etc/nginx/modsecurity/custom-rules/blocking.conf << 'EOF'
+        # 拦截特定 User-Agent
+        SecRule REQUEST_HEADERS:User-Agent "@contains badbot" \
+          "id:2000,phase:1,t:lowercase,deny,status:403,msg:'Bad bot detected'"
+        
+        # 拦截特定请求
+        SecRule REQUEST_URI "@rx \.(php|asp|aspx|jsp)$" \
+          "id:2001,phase:1,t:none,deny,status:403,msg:'Script access denied'"
+        EOF
+        
+        # 创建业务规则
+        cat > /etc/nginx/modsecurity/custom-rules/business.conf << 'EOF'
+        # 限制 API 请求频率
+        SecRule REMOTE_ADDR "@ipMatch !192.168.1.0/24" \
+          "id:3000,phase:1,t:none,initcol:ip=%{REMOTE_ADDR},setvar:ip.requests=+1,expirevar:ip.requests=60"
+        
+        SecRule IP:REQUESTS "@gt 100" \
+          "id:3001,phase:1,t:none,deny,status:429,msg:'Rate limit exceeded'"
+        EOF
+        
+        # 更新主配置
+        echo 'Include /etc/nginx/modsecurity/custom-rules/*.conf' >> /etc/nginx/modsecurity/modsecurity.conf
+      register: config_result
+      
+    - name: 显示配置结果
+      debug:
+        msg: "{{ config_result.stdout_lines }}"
+
+    - name: 重启 Nginx
+      shell: |
+        set -x
+        echo "=== 重启 Nginx ==="
+        
+        # 测试配置
+        nginx -t
+        
+        # 重启服务
+        systemctl restart nginx
+        
+        # 检查状态
+        systemctl status nginx
+      register: restart_result
+      
+    - name: 显示重启结果
+      debug:
+        msg: "{{ restart_result.stdout_lines }}" 

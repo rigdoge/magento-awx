@@ -1,135 +1,100 @@
 ---
-- name: 安装 ModSecurity
+- name: 安装 ModSecurity 基础环境
   hosts: all
   gather_facts: no
-  vars:
-    use_namespace: "{{ namespace | default('magento-shared') }}"  # 默认使用共享命名空间
-
+  become: yes
+  
   tasks:
-    - name: 获取 Nginx Pod 名称
+    - name: 清理旧安装
       shell: |
         set -x
-        POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=nginx -o jsonpath='{.items[0].metadata.name}')
-        if [ -z "$POD_NAME" ]; then
-          echo "未找到 Nginx Pod"
-          exit 1
-        fi
-        echo $POD_NAME
-      register: pod_name
-
-    - name: 安装 ModSecurity
-      shell: |
-        set -x
-        POD_NAME="{{ pod_name.stdout }}"
-        echo "=== 安装 ModSecurity ==="
+        echo "=== 清理旧安装 ==="
         
-        # 在 Nginx Pod 中安装 ModSecurity
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c '
-          set -e  # 遇到错误就退出
-          
-          # 安装编译工具和依赖
-          apt-get update
-          apt-get install -y \
-            git \
-            build-essential \
-            libpcre3-dev \
-            libssl-dev \
-            libtool \
-            autoconf \
-            automake \
-            libxml2-dev \
-            libcurl4-openssl-dev \
-            pkg-config \
-            zlib1g-dev
-          
-          # 创建工作目录
-          mkdir -p /opt/modsecurity
-          cd /opt/modsecurity
-          
-          # 下载并编译 ModSecurity
-          echo "下载 ModSecurity..."
-          git clone --depth 1 -b v3/master --single-branch https://github.com/SpiderLabs/ModSecurity
-          cd ModSecurity
-          echo "编译 ModSecurity..."
-          git submodule init
-          git submodule update
-          ./build.sh
-          ./configure
-          make
-          make install
-          
-          # 下载并编译 ModSecurity-nginx
-          echo "下载 ModSecurity-nginx..."
-          cd /opt/modsecurity
-          git clone --depth 1 https://github.com/SpiderLabs/ModSecurity-nginx.git
-          
-          # 获取当前 Nginx 版本和配置参数
-          NGINX_VERSION=$(nginx -v 2>&1 | sed "s/^.*nginx\///")
-          
-          # 下载对应版本的 Nginx 源码
-          echo "下载 Nginx 源码..."
-          wget http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
-          tar zxf nginx-${NGINX_VERSION}.tar.gz
-          
-          # 编译 Nginx 模块
-          cd nginx-${NGINX_VERSION}
-          echo "编译 Nginx 模块..."
-          ./configure --with-compat --add-dynamic-module=../ModSecurity-nginx
-          make modules
-          
-          # 复制模块到 Nginx 模块目录
-          mkdir -p /usr/lib/nginx/modules
-          cp objs/ngx_http_modsecurity_module.so /usr/lib/nginx/modules/
-          
-          # 下载 OWASP 规则
-          echo "下载 OWASP ModSecurity 核心规则集..."
-          cd /opt/modsecurity
-          git clone https://github.com/coreruleset/coreruleset.git
-          mv coreruleset/crs-setup.conf.example /etc/nginx/modsecurity-crs.conf
-          mv coreruleset/rules /etc/nginx/modsecurity-rules
-          
-          # 创建基础配置
-          echo "创建 ModSecurity 配置..."
-          mkdir -p /etc/nginx/modsecurity
-          cp ModSecurity/modsecurity.conf-recommended /etc/nginx/modsecurity/modsecurity.conf
-          
-          # 修改配置
-          sed -i "s/SecRuleEngine DetectionOnly/SecRuleEngine On/" /etc/nginx/modsecurity/modsecurity.conf
-          
-          # 创建主配置文件
-          cat > /etc/nginx/modsecurity/main.conf << "EOF"
-          # 加载模块
-          load_module modules/ngx_http_modsecurity_module.so;
-          
-          # ModSecurity 配置
-          modsecurity on;
-          modsecurity_rules_file /etc/nginx/modsecurity/modsecurity.conf;
-          modsecurity_rules_file /etc/nginx/modsecurity-crs.conf;
-          modsecurity_rules_file /etc/nginx/modsecurity-rules/*.conf;
-          EOF
-          
-          # 修改 Nginx 配置以包含 ModSecurity 配置
-          echo "include /etc/nginx/modsecurity/main.conf;" > /etc/nginx/conf.d/modsecurity.conf
-          
-          # 测试配置
-          nginx -t
-        '
-      register: install_result
+        # 停止 Nginx
+        systemctl stop nginx || true
+        
+        # 删除旧文件
+        rm -rf /etc/nginx/modules-enabled/modsecurity.conf
+        rm -rf /etc/nginx/modsecurity
+        
+        # 清理包
+        apt-get remove -y libmodsecurity3 modsecurity-crs || true
+        apt-get autoremove -y
+      register: clean_result
+      
+    - name: 显示清理结果
+      debug:
+        msg: "{{ clean_result.stdout_lines }}"
 
+    - name: 安装基础包
+      shell: |
+        set -x
+        echo "=== 安装基础包 ==="
+        
+        # 更新包管理器
+        apt-get update
+        
+        # 安装依赖
+        apt-get install -y \
+          libmodsecurity3 \
+          libmodsecurity-dev \
+          nginx-module-security || true
+        
+        # 创建配置目录
+        mkdir -p /etc/nginx/modsecurity
+        
+        # 复制默认配置
+        cp /etc/modsecurity/modsecurity.conf-recommended /etc/nginx/modsecurity/modsecurity.conf
+      register: install_result
+      
     - name: 显示安装结果
       debug:
         msg: "{{ install_result.stdout_lines }}"
 
+    - name: 配置 ModSecurity
+      shell: |
+        set -x
+        echo "=== 配置 ModSecurity ==="
+        
+        # 修改基础配置
+        sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/nginx/modsecurity/modsecurity.conf
+        
+        # 创建主配置文件
+        cat > /etc/nginx/modules-enabled/modsecurity.conf << 'EOF'
+        modsecurity on;
+        modsecurity_rules_file /etc/nginx/modsecurity/modsecurity.conf;
+        EOF
+        
+        # 创建基础规则
+        cat > /etc/nginx/modsecurity/basic-rules.conf << 'EOF'
+        # 基础安全规则
+        SecRule REQUEST_HEADERS:Content-Type "text/xml" \
+          "id:1,phase:1,t:none,deny,status:403,msg:'XML content type not allowed'"
+        
+        SecRule REQUEST_FILENAME "\\.(exe|dll|so)$" \
+          "id:2,phase:1,t:none,deny,status:403,msg:'Executable files not allowed'"
+        EOF
+      register: config_result
+      
+    - name: 显示配置结果
+      debug:
+        msg: "{{ config_result.stdout_lines }}"
+
     - name: 重启 Nginx
       shell: |
         set -x
-        POD_NAME="{{ pod_name.stdout }}"
         echo "=== 重启 Nginx ==="
         
-        # 重启 Nginx
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- nginx -s reload
+        # 测试配置
+        nginx -t
+        
+        # 重启服务
+        systemctl restart nginx
+        
+        # 检查状态
+        systemctl status nginx
       register: restart_result
-
+      
     - name: 显示重启结果
       debug:
         msg: "{{ restart_result.stdout_lines }}" 
