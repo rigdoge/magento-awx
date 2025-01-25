@@ -103,12 +103,62 @@
                       
                       echo "配置 PHP-FPM..."
                       {
+                        echo "[global]"
+                        echo "error_log = /proc/self/fd/2"
+                        echo "daemonize = no"
+                        echo "include=/usr/local/etc/php-fpm.d/*.conf"
+                        
+                        echo "[www]"
+                        echo "access.log = /proc/self/fd/2"
+                        echo "clear_env = no"
+                        echo "catch_workers_output = yes"
+                        echo "decorate_workers_output = no"
+                        
+                        echo "; 动态进程管理"
                         echo "pm = dynamic"
                         echo "pm.max_children = 5"
                         echo "pm.start_servers = 2"
                         echo "pm.min_spare_servers = 1"
                         echo "pm.max_spare_servers = 3"
+                        
+                        echo "; 状态页面"
+                        echo "pm.status_path = /status"
+                        
+                        echo "; 慢日志"
+                        echo "slowlog = /proc/self/fd/2"
+                        echo "request_slowlog_timeout = 10s"
+                        
+                        echo "; 超时设置"
+                        echo "request_terminate_timeout = 300s"
+                        echo "rlimit_files = 65535"
                       } > /usr/local/etc/php-fpm.d/www.conf
+                      
+                      echo "创建示例站点配置..."
+                      {
+                        echo "[site1]"
+                        echo "user = www-data"
+                        echo "group = www-data"
+                        echo "listen = 9001"
+                        echo "pm = dynamic"
+                        echo "pm.max_children = 3"
+                        echo "pm.start_servers = 1"
+                        echo "pm.min_spare_servers = 1"
+                        echo "pm.max_spare_servers = 2"
+                        echo "php_admin_value[memory_limit] = 128M"
+                      } > /usr/local/etc/php-fpm.d/site1.conf
+                      
+                      {
+                        echo "[site2]"
+                        echo "user = www-data"
+                        echo "group = www-data"
+                        echo "listen = 9002"
+                        echo "pm = dynamic"
+                        echo "pm.max_children = 3"
+                        echo "pm.start_servers = 1"
+                        echo "pm.min_spare_servers = 1"
+                        echo "pm.max_spare_servers = 2"
+                        echo "php_admin_value[memory_limit] = 128M"
+                      } > /usr/local/etc/php-fpm.d/site2.conf
                       
                       echo "检查最终 PHP 配置..."
                       php -v
@@ -159,7 +209,15 @@
             - port: 9000
               targetPort: 9000
               nodePort: {{ use_nodeport }}
-              name: fpm
+              name: fpm-default
+            - port: 9001
+              targetPort: 9001
+              nodePort: {{ use_nodeport | int + 1 }}
+              name: fpm-site1
+            - port: 9002
+              targetPort: 9002
+              nodePort: {{ use_nodeport | int + 2 }}
+              name: fpm-site2
             selector:
               app: php-fpm
 
