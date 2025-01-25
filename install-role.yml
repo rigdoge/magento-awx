@@ -1,8 +1,8 @@
 ---
-- name: 通用角色安装
+- name: 安装和使用 Galaxy 角色
   hosts: all
   vars:
-    role_name: "{{ role | default('') }}"  # 在 AWX 中设置
+    role_name: "{{ role | default('') }}"
     namespace: "{{ namespace | default('default') }}"
   
   pre_tasks:
@@ -10,34 +10,15 @@
       fail:
         msg: "必须指定 role 参数"
       when: role_name == ''
-      
-    - name: 确保 pip 可用
-      shell: |
-        if ! command -v pip3 &> /dev/null; then
-          apt-get update
-          apt-get install -y python3-pip
-        fi
-      become: yes
-      
-    - name: 安装 ansible
-      pip:
-        name: ansible
-        state: present
-      become: yes
-      
-    - name: 安装所需角色
-      shell: |
-        ansible-galaxy install {{ role_name }}
+
+  tasks:
+    - name: 下载角色
+      command: "ansible-galaxy role install {{ role_name }}"
       register: install_result
-      
+
     - name: 显示安装结果
       debug:
         var: install_result
-  
+
   roles:
-    - "{{ role_name }}"
-  
-  post_tasks:
-    - name: 显示安装结果
-      debug:
-        msg: "角色 {{ role_name }} 安装完成" 
+    - "{{ role_name }}" 
