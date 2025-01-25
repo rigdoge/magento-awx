@@ -11,8 +11,22 @@
         msg: "必须指定 role 参数"
       when: role_name == ''
       
+    - name: 确保 ansible-galaxy 可用
+      shell: |
+        if ! command -v ansible-galaxy &> /dev/null; then
+          apt-get update
+          apt-get install -y ansible
+        fi
+      become: yes
+      
     - name: 安装所需角色
-      command: "ansible-galaxy install {{ role_name }}"
+      shell: |
+        ansible-galaxy install {{ role_name }}
+      register: install_result
+      
+    - name: 显示安装结果
+      debug:
+        var: install_result
   
   roles:
     - "{{ role_name }}"
