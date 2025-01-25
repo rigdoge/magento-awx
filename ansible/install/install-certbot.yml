@@ -130,11 +130,24 @@
         set -x
         echo "=== 申请证书 ==="
         
-        # 停止 Nginx
-        kubectl -n {{ namespace }} scale deployment nginx --replicas=0
-        sleep 5
+        # 检查 webroot 目录
+        echo "检查 webroot 目录..."
+        ls -la {{ webroot_path }}
+        
+        # 检查 nginx 配置
+        echo "检查 nginx 配置..."
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -T
+        
+        # 测试域名解析
+        echo "测试域名解析..."
+        host {{ domain_name }}
+        
+        # 测试 HTTP 访问
+        echo "测试 HTTP 访问..."
+        curl -v http://{{ domain_name }}/.well-known/acme-challenge/test
         
         # 申请证书
+        echo "开始申请证书..."
         certbot certonly \
           --webroot \
           -w {{ webroot_path }} \
@@ -143,10 +156,16 @@
           --agree-tos \
           --non-interactive \
           --debug-challenges \
+          -v \
           {% if use_staging %}--staging{% endif %}
         
-        # 启动 Nginx
-        kubectl -n {{ namespace }} scale deployment nginx --replicas=1
+        # 检查证书
+        echo "检查证书..."
+        certbot certificates
+        
+        # 检查证书文件
+        echo "检查证书文件..."
+        ls -la /etc/letsencrypt/live/{{ domain_name }}/
       register: cert_result
       
     - name: 显示证书申请结果
