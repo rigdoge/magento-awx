@@ -1,0 +1,51 @@
+---
+# Magento 环境配置
+environments:
+  - name: composer
+    role: geerlingguy.composer
+    version: "2.7"
+    
+  - name: nginx
+    role: geerlingguy.nginx
+    version: "1.24"
+    
+  - name: percona
+    role: geerlingguy.mysql
+    version: "8.0"
+    type: percona
+    
+  - name: rabbitmq
+    role: idealista.rabbitmq_role
+    version: "3.13.7"
+    
+  - name: redis
+    role: geerlingguy.redis
+    version: "7.2"
+    
+  - name: varnish
+    role: geerlingguy.varnish
+    version: "7.5"
+    
+  - name: opensearch
+    role: geerlingguy.elasticsearch
+    version: "2.12.0"
+    type: opensearch
+    
+  - name: php83
+    role: geerlingguy.php
+    version: "8.3"
+    is_default: true
+    
+  - name: php82
+    role: geerlingguy.php
+    version: "8.2"
+    
+  - name: fail2ban
+    role: geerlingguy.security
+    type: fail2ban
+    
+  - name: certbot
+    role: geerlingguy.certbot
+    
+  - name: phpmyadmin
+    role: geerlingguy.phpmyadmin 
