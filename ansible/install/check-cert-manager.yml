@@ -12,7 +12,12 @@
         var: pods_status.stdout_lines
 
     - name: 检查 ClusterIssuer 状态
-      shell: kubectl get clusterissuer letsencrypt-prod -o yaml
+      shell: |
+        echo "=== ClusterIssuer 列表 ==="
+        kubectl get clusterissuer
+        echo
+        echo "=== ClusterIssuer 详细信息 ==="
+        kubectl describe clusterissuer letsencrypt-prod
       register: issuer_status
 
     - name: 显示 ClusterIssuer 状态
@@ -20,7 +25,12 @@
         var: issuer_status.stdout_lines
 
     - name: 检查证书状态
-      shell: kubectl get certificate -n awx
+      shell: |
+        echo "=== 证书列表 ==="
+        kubectl get certificate -n awx
+        echo
+        echo "=== 证书详细信息 ==="
+        kubectl describe certificate awx-tls -n awx
       register: cert_status
 
     - name: 显示证书状态
@@ -44,7 +54,12 @@
         var: cert_request.stdout_lines
 
     - name: 检查 Challenge 状态
-      shell: kubectl get challenge -n awx
+      shell: |
+        echo "=== Challenge 列表 ==="
+        kubectl get challenge -n awx
+        echo
+        echo "=== Challenge 详细信息 ==="
+        kubectl describe challenge -n awx
       register: challenge_status
 
     - name: 显示 Challenge 状态
@@ -52,9 +67,31 @@
         var: challenge_status.stdout_lines
 
     - name: 检查 Ingress 配置
-      shell: kubectl get ingress -n awx
+      shell: |
+        echo "=== Ingress 列表 ==="
+        kubectl get ingress -n awx
+        echo
+        echo "=== Ingress 详细信息 ==="
+        kubectl describe ingress -n awx
       register: ingress_status
 
     - name: 显示 Ingress 配置
       debug:
-        var: ingress_status.stdout_lines 
+        var: ingress_status.stdout_lines
+
+    - name: 检查 HTTP-01 验证访问
+      shell: |
+        echo "=== 测试 HTTP-01 验证访问 ==="
+        # 获取 challenge path
+        CHALLENGE_PATH=$(kubectl get challenge -n awx -o jsonpath='{.items[0].spec.token}')
+        if [ ! -z "$CHALLENGE_PATH" ]; then
+          echo "尝试访问验证 URL..."
+          curl -v http://awx.tschenfeng.com/.well-known/acme-challenge/$CHALLENGE_PATH || echo "访问失败"
+        else
+          echo "未找到 challenge token"
+        fi
+      register: http_check
+
+    - name: 显示 HTTP 检查结果
+      debug:
+        var: http_check.stdout_lines 
