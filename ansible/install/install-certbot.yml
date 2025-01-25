@@ -245,15 +245,7 @@
         ls -la {{ webroot_path }}/.well-known/acme-challenge/
         cat {{ webroot_path }}/.well-known/acme-challenge/test.txt
         
-        # 确保 Pod 中的目录存在
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- mkdir -p {{ webroot_path }}/.well-known/acme-challenge
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- chmod -R 755 {{ webroot_path }}
-        
-        # 复制测试文件到 Pod
-        kubectl -n {{ namespace }} cp {{ webroot_path }}/.well-known/acme-challenge/test.txt {{ namespace }}/{{ nginx_pod.stdout }}:{{ webroot_path }}/.well-known/acme-challenge/test.txt
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- chmod 644 {{ webroot_path }}/.well-known/acme-challenge/test.txt
-        
-        # 显示 Pod 中的文件
+        # 验证 Pod 中是否可以看到文件
         echo "Pod 中的文件："
         kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ls -la {{ webroot_path }}/.well-known/acme-challenge/
         kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- cat {{ webroot_path }}/.well-known/acme-challenge/test.txt
@@ -293,6 +285,10 @@
         # 测试配置
         echo "配置测试："
         kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -t || true
+        
+        # 重新加载配置
+        echo "重新加载 Nginx："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -s reload || true
       register: nginx_config_check
       
     - name: 显示 Nginx 配置检查结果
