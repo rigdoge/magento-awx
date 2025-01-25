@@ -90,8 +90,13 @@
     - name: 配置 nginx 以服务验证文件
       copy:
         content: |
-          location /.well-known/acme-challenge/ {
-              root {{ webroot_path }};
+          server {
+            listen 80;
+            server_name {{ domain_name }};
+            
+            location /.well-known/acme-challenge/ {
+                root {{ webroot_path }};
+            }
           }
         dest: /tmp/certbot-location.conf
       become: true
