@@ -3,33 +3,58 @@
   hosts: all
   gather_facts: no
   tasks:
+    - name: 检查 cert-manager Pod 状态
+      shell: kubectl get pods -n cert-manager
+      register: pods_status
+
+    - name: 显示 Pod 状态
+      debug:
+        var: pods_status.stdout_lines
+
+    - name: 检查 ClusterIssuer 状态
+      shell: kubectl get clusterissuer letsencrypt-prod -o yaml
+      register: issuer_status
+
+    - name: 显示 ClusterIssuer 状态
+      debug:
+        var: issuer_status.stdout_lines
+
     - name: 检查证书状态
-      shell: |
-        echo "=== 检查 cert-manager Pod 状态 ==="
-        kubectl get pods -n cert-manager
-        
-        echo -e "\n=== 检查 ClusterIssuer 状态 ==="
-        kubectl get clusterissuer letsencrypt-prod -o yaml
-        
-        echo -e "\n=== 检查证书状态 ==="
-        kubectl get certificate -n awx
-        
-        echo -e "\n=== 检查证书详细信息 ==="
-        kubectl describe certificate awx-tls -n awx
-        
-        echo -e "\n=== 检查 CertificateRequest ==="
-        kubectl get certificaterequest -n awx
-        
-        echo -e "\n=== 检查 Order 状态 ==="
-        kubectl get order -n awx
-        
-        echo -e "\n=== 检查 Challenge 状态 ==="
-        kubectl get challenge -n awx
-        
-        echo -e "\n=== 检查 Ingress 配置 ==="
-        kubectl get ingress -n awx
+      shell: kubectl get certificate -n awx
       register: cert_status
 
-    - name: 显示检查结果
+    - name: 显示证书状态
       debug:
-        var: cert_status.stdout_lines 
+        var: cert_status.stdout_lines
+
+    - name: 检查证书详细信息
+      shell: kubectl describe certificate awx-tls -n awx
+      register: cert_details
+
+    - name: 显示证书详细信息
+      debug:
+        var: cert_details.stdout_lines
+
+    - name: 检查 CertificateRequest
+      shell: kubectl get certificaterequest -n awx
+      register: cert_request
+
+    - name: 显示 CertificateRequest
+      debug:
+        var: cert_request.stdout_lines
+
+    - name: 检查 Challenge 状态
+      shell: kubectl get challenge -n awx
+      register: challenge_status
+
+    - name: 显示 Challenge 状态
+      debug:
+        var: challenge_status.stdout_lines
+
+    - name: 检查 Ingress 配置
+      shell: kubectl get ingress -n awx
+      register: ingress_status
+
+    - name: 显示 Ingress 配置
+      debug:
+        var: ingress_status.stdout_lines 
