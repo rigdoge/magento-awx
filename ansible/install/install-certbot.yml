@@ -5,9 +5,10 @@
   become: yes
   vars:
     namespace: "{{ namespace | default('default') }}"  # 可在 AWX 中覆盖
-    domain: "{{ domain_name | default('awx.tschenfeng.com') }}"  # 可在 AWX 中覆盖
-    email: "{{ email_address | default('ssl@tschenfeng.com') }}"  # 可在 AWX 中覆盖
+    domain_name: "{{ domain_name }}"
+    email_address: "{{ email_address }}"
     use_staging: "{{ staging | default(true) }}"  # 默认使用 staging 环境，避免触发限制
+    webroot_path: "/var/www/certbot"
   
   tasks:
     - name: 获取 Nginx Pod 名称
@@ -51,10 +52,10 @@
       debug:
         msg: "{{ deps_result.stdout_lines }}"
 
-    - name: 安装 Certbot
+    - name: 安装 certbot
       shell: |
         set -x
-        echo "=== 安装 Certbot ==="
+        echo "=== 安装 certbot ==="
         
         # 删除可能存在的旧版本
         apt-get remove -y certbot
@@ -70,6 +71,37 @@
       debug:
         msg: "{{ install_result.stdout_lines }}"
 
+    - name: 创建 webroot 目录
+      file:
+        path: "{{ webroot_path }}"
+        state: directory
+        mode: '0755'
+      become: true
+
+    - name: 获取 nginx pod 名称
+      shell: kubectl -n {{ namespace }} get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}'
+      register: nginx_pod
+      changed_when: false
+
+    - name: 在 nginx pod 中创建 webroot 目录
+      shell: kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- mkdir -p {{ webroot_path }}
+      ignore_errors: true
+
+    - name: 配置 nginx 以服务验证文件
+      copy:
+        content: |
+          location /.well-known/acme-challenge/ {
+              root {{ webroot_path }};
+          }
+        dest: /tmp/certbot-location.conf
+      become: true
+
+    - name: 复制 nginx 配置到 pod
+      shell: kubectl -n {{ namespace }} cp /tmp/certbot-location.conf {{ nginx_pod.stdout }}:/etc/nginx/conf.d/certbot-location.conf
+
+    - name: 重新加载 nginx 配置
+      shell: kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -s reload
+
     - name: 申请证书
       shell: |
         set -x
@@ -81,11 +113,12 @@
         
         # 申请证书
         certbot certonly \
-          --standalone \
-          --non-interactive \
+          --webroot \
+          -w {{ webroot_path }} \
+          -d {{ domain_name }} \
+          --email {{ email_address }} \
           --agree-tos \
-          --email {{ email }} \
-          -d {{ domain }} \
+          --non-interactive \
           {% if use_staging %}--staging{% endif %}
         
         # 启动 Nginx
@@ -140,29 +173,40 @@
         
         # 检查源证书文件
         echo "检查源证书文件..."
-        ls -la /etc/letsencrypt/live/{{ domain }}/
+        ls -la /etc/letsencrypt/live/{{ domain_name }}/
         
         # 创建 Pod 中的目录
         echo "创建证书目录..."
-        kubectl -n {{ namespace }} exec $POD_NAME -- mkdir -p /etc/letsencrypt/live/{{ domain }}
+        kubectl -n {{ namespace }} exec $POD_NAME -- mkdir -p /etc/letsencrypt/live/{{ domain_name }}
         
         # 直接复制证书文件
         echo "复制证书文件..."
         for cert in fullchain.pem privkey.pem chain.pem; do
           echo "复制 $cert..."
           # 检查源文件
-          ls -l /etc/letsencrypt/live/{{ domain }}/$cert
+          ls -l /etc/letsencrypt/live/{{ domain_name }}/$cert
           # 复制文件
-          kubectl -n {{ namespace }} cp /etc/letsencrypt/live/{{ domain }}/$cert {{ namespace }}/$POD_NAME:/etc/letsencrypt/live/{{ domain }}/$cert
+          kubectl -n {{ namespace }} cp /etc/letsencrypt/live/{{ domain_name }}/$cert {{ namespace }}/$POD_NAME:/etc/letsencrypt/live/{{ domain_name }}/$cert
           # 验证目标文件
-          kubectl -n {{ namespace }} exec $POD_NAME -- ls -l /etc/letsencrypt/live/{{ domain }}/$cert
+          kubectl -n {{ namespace }} exec $POD_NAME -- ls -l /etc/letsencrypt/live/{{ domain_name }}/$cert
         done
         
         # 验证复制结果
         echo "验证证书文件..."
-        kubectl -n {{ namespace }} exec $POD_NAME -- ls -la /etc/letsencrypt/live/{{ domain }}/
+        kubectl -n {{ namespace }} exec $POD_NAME -- ls -la /etc/letsencrypt/live/{{ domain_name }}/
       register: copy_result
       
     - name: 显示复制结果
       debug:
-        msg: "{{ copy_result.stdout_lines }}" 
+        msg: "{{ copy_result.stdout_lines }}"
+
+    - name: 配置自动续期
+      ansible.builtin.cron:
+        name: "certbot renew for {{ domain_name }}"
+        job: "certbot renew --webroot -w {{ webroot_path }} --deploy-hook 'kubectl -n {{ namespace }} exec $(kubectl -n {{ namespace }} get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}') -- nginx -s reload'"
+        special_time: daily
+      become: true
+
+    - name: 测试自动续期
+      shell: certbot renew --dry-run
+      become: true 
