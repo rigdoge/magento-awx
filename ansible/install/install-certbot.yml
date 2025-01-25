@@ -125,29 +125,42 @@
         # 重新加载
         kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -s reload
 
+    - name: 检查 webroot 目录
+      shell: ls -la {{ webroot_path }}
+      register: webroot_result
+      
+    - name: 显示 webroot 目录内容
+      debug:
+        msg: "{{ webroot_result.stdout_lines }}"
+
+    - name: 检查 nginx 配置
+      shell: kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -T
+      register: nginx_config_result
+      
+    - name: 显示 nginx 配置
+      debug:
+        msg: "{{ nginx_config_result.stdout_lines }}"
+
+    - name: 测试域名解析
+      shell: host {{ domain_name }}
+      register: dns_result
+      ignore_errors: yes
+      
+    - name: 显示域名解析结果
+      debug:
+        msg: "{{ dns_result.stdout_lines }}"
+
+    - name: 测试 HTTP 访问
+      shell: curl -v http://{{ domain_name }}/.well-known/acme-challenge/test
+      register: curl_result
+      ignore_errors: yes
+      
+    - name: 显示 HTTP 访问结果
+      debug:
+        msg: "{{ curl_result.stderr_lines + curl_result.stdout_lines }}"
+
     - name: 申请证书
       shell: |
-        set -x
-        echo "=== 申请证书 ==="
-        
-        # 检查 webroot 目录
-        echo "检查 webroot 目录..."
-        ls -la {{ webroot_path }}
-        
-        # 检查 nginx 配置
-        echo "检查 nginx 配置..."
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -T
-        
-        # 测试域名解析
-        echo "测试域名解析..."
-        host {{ domain_name }}
-        
-        # 测试 HTTP 访问
-        echo "测试 HTTP 访问..."
-        curl -v http://{{ domain_name }}/.well-known/acme-challenge/test
-        
-        # 申请证书
-        echo "开始申请证书..."
         certbot certonly \
           --webroot \
           -w {{ webroot_path }} \
@@ -158,19 +171,28 @@
           --debug-challenges \
           -v \
           {% if use_staging %}--staging{% endif %}
-        
-        # 检查证书
-        echo "检查证书..."
-        certbot certificates
-        
-        # 检查证书文件
-        echo "检查证书文件..."
-        ls -la /etc/letsencrypt/live/{{ domain_name }}/
       register: cert_result
       
     - name: 显示证书申请结果
       debug:
-        msg: "{{ cert_result.stdout_lines }}"
+        msg: "{{ cert_result.stdout_lines + cert_result.stderr_lines }}"
+
+    - name: 检查证书
+      shell: certbot certificates
+      register: cert_check_result
+      
+    - name: 显示证书检查结果
+      debug:
+        msg: "{{ cert_check_result.stdout_lines }}"
+
+    - name: 检查证书文件
+      shell: ls -la /etc/letsencrypt/live/{{ domain_name }}/
+      register: cert_files_result
+      ignore_errors: yes
+      
+    - name: 显示证书文件列表
+      debug:
+        msg: "{{ cert_files_result.stdout_lines }}"
 
     - name: 配置自动续期
       shell: |
