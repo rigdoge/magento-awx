@@ -2,23 +2,43 @@
 - name: 卸载 Nginx
   hosts: all
   gather_facts: no
+  vars:
+    namespaces:
+      - magento-1
+      - magento-2
+      - magento-3
   tasks:
-    - name: 删除 Nginx 服务
+    - name: 显示卸载信息
+      debug:
+        msg: "准备从以下命名空间卸载 Nginx: {{ namespaces | join(', ') }}"
+
+    - name: 卸载每个命名空间中的 Nginx
       shell: |
-        echo "=== 删除 Nginx ==="
-        /usr/local/bin/k3s kubectl delete deployment,svc nginx -n magento || true
+        echo "=== 开始卸载命名空间 {{ item }} 中的 Nginx ==="
         
-        echo -e "\n=== 等待 Pod 终止 ==="
-        for i in {1..10}; do
-          if ! /usr/local/bin/k3s kubectl get pods -n magento -l app=nginx 2>/dev/null | grep -q .; then
-            echo "Nginx Pod 已终止"
-            break
-          fi
-          echo "等待 Nginx Pod 终止... $i"
-          sleep 3
-        done
+        echo "删除 Deployment..."
+        kubectl delete deployment nginx -n {{ item }} || true
+        
+        echo "删除 Service..."
+        kubectl delete service nginx -n {{ item }} || true
+        
+        echo "删除 ConfigMap..."
+        kubectl delete configmap nginx-config -n {{ item }} || true
+        
+        echo "等待资源删除..."
+        sleep 5
+        
+        echo "检查剩余资源..."
+        echo "Pods:"
+        kubectl get pods -n {{ item }} -l app=nginx
+        echo "Services:"
+        kubectl get svc -n {{ item }} -l app=nginx
+        echo "ConfigMaps:"
+        kubectl get configmap -n {{ item }} -l app=nginx
       register: uninstall_result
+      loop: "{{ namespaces }}"
 
     - name: 显示卸载结果
       debug:
-        msg: "{{ uninstall_result.stdout_lines | default([]) }}" 
+        msg: "{{ item.stdout_lines }}"
+      loop: "{{ uninstall_result.results }}" 
