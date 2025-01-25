@@ -3,125 +3,73 @@
   hosts: all
   gather_facts: no
   tasks:
-    - name: 设置默认命名空间
+    - name: 获取所有命名空间
+      shell: |
+        kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'
+      register: namespaces_result
+
+    - name: 设置命名空间列表
       set_fact:
-        use_namespace: "{{ namespace | default('default') }}"
+        all_namespaces: "{{ namespaces_result.stdout.split() }}"
 
     - name: 显示诊断信息
       debug:
-        msg: "开始诊断命名空间 '{{ use_namespace }}' 中的 PHP-FPM"
+        msg: "开始检查所有命名空间中的 PHP-FPM"
 
-    - name: 检查 PHP-FPM 状态
-      environment:
-        NAMESPACE: "{{ use_namespace }}"
+    - name: 检查每个命名空间中的 PHP-FPM
       shell: |
         set -x
-        echo "=== 开始诊断 PHP-FPM ==="
-        echo "命名空间: $NAMESPACE"
+        NAMESPACE="{{ item }}"
+        echo "=== 检查命名空间: $NAMESPACE ==="
         
-        echo "=== 检查节点资源 ==="
-        echo "节点状态:"
-        kubectl get nodes -o wide
-        echo "节点描述:"
-        kubectl describe nodes
+        # 检查是否存在 PHP-FPM Pod
+        if ! kubectl get pods -n "$NAMESPACE" -l app=php-fpm --no-headers 2>/dev/null | grep -q .; then
+          echo "此命名空间中没有 PHP-FPM Pod"
+          exit 0
+        fi
         
         echo "=== 获取 Pod 信息 ==="
         POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
-        if [ -z "$POD_NAME" ]; then
-          echo "未找到 PHP-FPM Pod"
-          exit 1
-        fi
         echo "Pod 名称: $POD_NAME"
         
         echo "=== Pod 状态信息 ==="
         kubectl get pod -n "$NAMESPACE" "$POD_NAME" -o wide
         
         echo "=== Pod 详细信息 ==="
-        kubectl describe pod -n "$NAMESPACE" "$POD_NAME"
+        kubectl describe pod -n "$NAMESPACE" "$POD_NAME" | grep -A 5 "Status:"
         
         echo "=== Pod 事件 ==="
-        kubectl get events -n "$NAMESPACE" --field-selector involvedObject.name="$POD_NAME" --sort-by='.lastTimestamp'
+        kubectl get events -n "$NAMESPACE" --field-selector involvedObject.name="$POD_NAME" --sort-by='.lastTimestamp' | tail -n 5
         
-        echo "=== 初始化容器日志 ==="
-        kubectl logs -n "$NAMESPACE" "$POD_NAME" -c init-php || true
+        echo "=== 容器日志 ==="
+        echo "PHP-FPM 日志:"
+        kubectl logs -n "$NAMESPACE" "$POD_NAME" --tail=20 || true
         
-        echo "=== PHP-FPM 容器日志 ==="
-        kubectl logs -n "$NAMESPACE" "$POD_NAME" || true
+        if kubectl get pod -n "$NAMESPACE" "$POD_NAME" -o jsonpath='{.spec.initContainers[*].name}' 2>/dev/null | grep -q "init-php"; then
+          echo "初始化容器日志:"
+          kubectl logs -n "$NAMESPACE" "$POD_NAME" -c init-php --tail=20 || true
+        fi
         
-        echo "=== 检查 PHP 配置 ==="
-        echo "尝试执行 PHP 命令..."
-        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- php -v || true
-        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- php -m || true
-        
-        echo "=== 检查 PHP-FPM 配置 ==="
-        echo "PHP-FPM 配置文件:"
-        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- ls -la /usr/local/etc/php-fpm.d/ || true
-        echo "PHP-FPM 配置内容:"
-        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- cat /usr/local/etc/php-fpm.d/www.conf || true
-        
-        echo "=== 检查系统依赖 ==="
-        echo "已安装的系统包:"
-        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- dpkg -l || true
-        
-        echo "=== 检查目录权限 ==="
-        echo "PHP 相关目录权限:"
-        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- ls -la /usr/local/etc/php* || true
-        kubectl exec -n "$NAMESPACE" "$POD_NAME" -- ls -la /usr/local/lib/php* || true
+        echo "=== PHP 状态检查 ==="
+        if kubectl get pod -n "$NAMESPACE" "$POD_NAME" -o jsonpath='{.status.phase}' | grep -q "Running"; then
+          echo "PHP 版本:"
+          kubectl exec -n "$NAMESPACE" "$POD_NAME" -- php -v || true
+          echo "已安装扩展:"
+          kubectl exec -n "$NAMESPACE" "$POD_NAME" -- php -m || true
+        else
+          echo "Pod 未处于运行状态，无法执行 PHP 命令"
+        fi
         
         echo "=== 服务状态 ==="
         kubectl get svc -n "$NAMESPACE" -l app=php-fpm -o wide
         
-        echo "=== 是否需要修复？ ==="
-        echo "1. 重启 Pod"
-        echo "2. 重新安装扩展"
-        echo "3. 修复权限"
-        echo "4. 退出"
-        read -p "请选择操作 (1-4): " choice
-        case $choice in
-          1)
-            echo "=== 重启 Pod ==="
-            kubectl delete pod -n "$NAMESPACE" "$POD_NAME"
-            echo "等待新 Pod 创建..."
-            sleep 10
-            NEW_POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
-            kubectl wait --for=condition=ready pod -n "$NAMESPACE" "$NEW_POD_NAME" --timeout=300s || true
-            echo "=== 新 Pod 状态 ==="
-            kubectl get pod -n "$NAMESPACE" "$NEW_POD_NAME" -o wide
-            ;;
-          2)
-            echo "=== 重新安装扩展 ==="
-            kubectl exec -n "$NAMESPACE" "$POD_NAME" -- sh -c '
-              apt-get update
-              apt-get install -y \
-                libfreetype6-dev \
-                libjpeg62-turbo-dev \
-                libpng-dev \
-                libicu-dev \
-                libxml2-dev \
-                libxslt1-dev \
-                libzip-dev \
-                libonig-dev \
-                libsodium-dev \
-                libcurl4-openssl-dev
-              docker-php-ext-configure gd --with-freetype --with-jpeg
-              for ext in bcmath ctype curl dom fileinfo gd iconv intl mbstring pdo_mysql simplexml soap xml xmlwriter xsl sockets sodium tokenizer zip; do
-                docker-php-ext-install "$ext"
-              done
-            '
-            ;;
-          3)
-            echo "=== 修复权限 ==="
-            kubectl exec -n "$NAMESPACE" "$POD_NAME" -- sh -c '
-              chown -R www-data:www-data /usr/local/etc/php*
-              chmod -R 755 /usr/local/etc/php*
-            '
-            ;;
-          4)
-            echo "退出诊断"
-            ;;
-        esac
+        echo "----------------------------------------"
       register: check_result
+      loop: "{{ all_namespaces }}"
+      ignore_errors: yes
 
     - name: 显示诊断结果
       debug:
-        msg: "{{ check_result.stdout_lines }}" 
+        msg: "{{ item.stdout_lines }}"
+      loop: "{{ check_result.results }}"
+      when: item.stdout is defined 
