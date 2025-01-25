@@ -5,7 +5,7 @@
   tasks:
     - name: 创建命名空间
       shell: |
-        /usr/local/bin/k3s kubectl create namespace {{ namespace }} || true
+        kubectl create namespace {{ namespace }} || true
       register: namespace_result
 
     - name: 创建 Percona 配置
@@ -71,7 +71,7 @@
 
     - name: 清理旧部署
       shell: |
-        /usr/local/bin/k3s kubectl delete -f /tmp/percona.yaml || true
+        kubectl delete -f /tmp/percona.yaml || true
         sleep 5
       register: cleanup_result
 
@@ -83,7 +83,7 @@
         echo "等待 Percona Pod 就绪..."
         for i in $(seq 1 30); do
           echo "等待中... $i/30"
-          POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=percona -o jsonpath='{.items[0].metadata.name}')
+          POD_NAME=$(kubectl get pods -n {{ namespace }} -l app=percona -o jsonpath='{.items[0].metadata.name}')
           if [ -z "$POD_NAME" ]; then
             echo "Pod 名称为空，继续等待..."
             sleep 5
@@ -91,31 +91,31 @@
           fi
           
           echo "Pod 名称: $POD_NAME"
-          STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
+          STATUS=$(kubectl get pod -n {{ namespace }} $POD_NAME -o jsonpath='{.status.phase}')
           echo "Pod 状态: $STATUS"
           
           echo "=== Pod 详细状态 ==="
-          kubectl get pod -n {{ use_namespace }} $POD_NAME -o yaml | grep -A 10 "status:"
+          kubectl get pod -n {{ namespace }} $POD_NAME -o yaml | grep -A 10 "status:"
           
           echo "=== Pod 事件 ==="
-          kubectl get events -n {{ use_namespace }} --field-selector involvedObject.name=$POD_NAME --sort-by='.lastTimestamp'
+          kubectl get events -n {{ namespace }} --field-selector involvedObject.name=$POD_NAME --sort-by='.lastTimestamp'
           
           echo "=== Pod 详细信息 ==="
-          kubectl describe pod -n {{ use_namespace }} $POD_NAME
+          kubectl describe pod -n {{ namespace }} $POD_NAME
           
           echo "=== Pod 日志 ==="
-          kubectl logs -n {{ use_namespace }} $POD_NAME --previous || true
-          kubectl logs -n {{ use_namespace }} $POD_NAME || true
+          kubectl logs -n {{ namespace }} $POD_NAME --previous || true
+          kubectl logs -n {{ namespace }} $POD_NAME || true
           
           sleep 10
         done
         
         echo -e "\n=== Percona 部署状态 ==="
         echo "Pod 状态:"
-        kubectl get pods -n {{ use_namespace }} -l app=percona
+        kubectl get pods -n {{ namespace }} -l app=percona
         
         echo -e "\nService 状态:"
-        kubectl get svc -n {{ use_namespace }} -l app=percona
+        kubectl get svc -n {{ namespace }} -l app=percona
       register: deploy_result
 
     - name: 显示部署结果
