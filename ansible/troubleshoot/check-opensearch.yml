@@ -2,53 +2,56 @@
 - name: 诊断 OpenSearch 问题
   hosts: all
   gather_facts: no
-  vars:
-    use_namespace: "{{ namespace | default('magento-shared') }}"
   tasks:
+    - name: 设置默认命名空间
+      set_fact:
+        use_namespace: "{{ namespace | default('magento-shared') }}"
+
     - name: 显示诊断信息
       debug:
-        msg: "开始诊断命名空间 {{ use_namespace }} 中的 OpenSearch"
+        msg: "开始诊断命名空间 '{{ use_namespace }}' 中的 OpenSearch"
 
     - name: 检查 OpenSearch 状态
       shell: |
-        NAMESPACE="{{ use_namespace }}"
+        NS='{{ use_namespace }}'
         set -x
         echo "=== 开始诊断 OpenSearch ==="
+        echo "命名空间: $NS"
         
         echo "获取 Pod 信息..."
-        POD_NAME=$(kubectl get pods -n $NAMESPACE -l app=opensearch -o jsonpath='{.items[0].metadata.name}')
+        POD_NAME=$(kubectl get pods -n "$NS" -l app=opensearch -o jsonpath='{.items[0].metadata.name}')
         echo "Pod 名称: $POD_NAME"
         
         echo "=== Pod 详细信息 ==="
-        kubectl describe pod -n $NAMESPACE $POD_NAME
+        kubectl describe pod -n "$NS" "$POD_NAME"
         
         echo "=== Pod 日志 ==="
-        kubectl logs -n $NAMESPACE $POD_NAME
+        kubectl logs -n "$NS" "$POD_NAME"
         
         echo "=== 系统资源使用情况 ==="
-        kubectl top pod -n $NAMESPACE $POD_NAME || true
+        kubectl top pod -n "$NS" "$POD_NAME" || true
         
         echo "=== 尝试重启 Pod ==="
-        kubectl delete pod -n $NAMESPACE $POD_NAME --force --grace-period=0
+        kubectl delete pod -n "$NS" "$POD_NAME" --force --grace-period=0
         
         echo "等待新 Pod 创建..."
         sleep 10
         
         echo "=== 检查新 Pod 状态 ==="
-        NEW_POD_NAME=$(kubectl get pods -n $NAMESPACE -l app=opensearch -o jsonpath='{.items[0].metadata.name}')
-        kubectl get pod -n $NAMESPACE $NEW_POD_NAME -o wide
+        NEW_POD_NAME=$(kubectl get pods -n "$NS" -l app=opensearch -o jsonpath='{.items[0].metadata.name}')
+        kubectl get pod -n "$NS" "$NEW_POD_NAME" -o wide
         
         echo "=== 等待 Pod 就绪 ==="
-        kubectl wait --for=condition=ready pod -n $NAMESPACE -l app=opensearch --timeout=300s || true
+        kubectl wait --for=condition=ready pod -n "$NS" -l app=opensearch --timeout=300s || true
         
         echo "=== 最终状态 ==="
-        kubectl get pods -n $NAMESPACE -l app=opensearch -o wide
+        kubectl get pods -n "$NS" -l app=opensearch -o wide
         
         echo "=== 检查服务状态 ==="
-        kubectl get svc -n $NAMESPACE -l app=opensearch
+        kubectl get svc -n "$NS" -l app=opensearch
         
         echo "=== 检查日志 ==="
-        kubectl logs -n $NAMESPACE $NEW_POD_NAME
+        kubectl logs -n "$NS" "$NEW_POD_NAME"
       register: check_result
 
     - name: 显示诊断结果
