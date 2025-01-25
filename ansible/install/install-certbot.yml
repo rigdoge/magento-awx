@@ -215,25 +215,59 @@
       debug:
         msg: "{{ test_file_result.stdout_lines }}"
 
-    - name: 检查 Nginx 进程和日志
+    - name: 检查 Nginx 进程
       shell: |
         set -x
-        echo "=== 检查 Nginx 状态 ==="
+        echo "=== 检查 Nginx 进程 ==="
+        
+        # 检查 Pod 状态
+        echo "Pod 状态："
+        kubectl -n {{ namespace }} get pod {{ nginx_pod.stdout }} -o wide
+        
+        # 检查 Pod 描述
+        echo "Pod 描述："
+        kubectl -n {{ namespace }} describe pod {{ nginx_pod.stdout }}
         
         # 检查 Nginx 进程
         echo "Nginx 进程信息："
         kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ps aux | grep nginx || true
+      register: nginx_process_result
+      
+    - name: 显示 Nginx 进程检查结果
+      debug:
+        msg: "{{ nginx_process_result.stdout_lines }}"
+
+    - name: 检查 Nginx 配置和日志
+      shell: |
+        set -x
+        echo "=== 检查 Nginx 配置和日志 ==="
         
-        # 检查 Nginx 配置
-        echo "Nginx 配置测试："
+        # 检查配置文件
+        echo "配置文件内容："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- cat /etc/nginx/conf.d/default.conf || true
+        
+        # 测试配置
+        echo "配置测试："
         kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -t || true
         
-        # 只检查最后 5 行错误日志
-        echo "最近的 Nginx 错误日志："
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- tail -n 5 /var/log/nginx/error.log || true
-      register: nginx_status_result
-      async: 30  # 30秒超时
-      poll: 2    # 每2秒检查一次
+        # 检查日志文件存在
+        echo "检查日志文件："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ls -l /var/log/nginx/ || true
+        
+        # 检查日志文件大小
+        echo "日志文件大小："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- du -h /var/log/nginx/error.log || true
+        
+        # 只看最后3行错误日志
+        echo "最近的错误日志："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- tail -n 3 /var/log/nginx/error.log || true
+      register: nginx_config_result
+      async: 30
+      poll: 2
+      
+    - name: 显示 Nginx 配置检查结果
+      debug:
+        msg: "{{ nginx_config_result.stdout_lines }}"
 
     - name: 测试验证文件访问
       shell: |
