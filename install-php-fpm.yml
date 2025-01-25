@@ -2,37 +2,27 @@
 - name: 安装 PHP-FPM 8.3
   hosts: all
   gather_facts: no
-  
-  pre_tasks:
-    - name: 验证必要参数
-      fail:
-        msg: "必须指定 namespace 参数"
-      when: namespace is not defined or namespace == ''
-
-    - name: 安装依赖
-      pip:
-        name: 
-          - kubernetes
-          - openshift
-        state: present
-      
+  vars:
+    use_namespace: "{{ namespace | default('default') }}"
+    use_nodeport: "{{ nodeport | default('30900') }}"
   tasks:
     - name: 创建命名空间
-      k8s:
-        api_version: v1
-        kind: Namespace
-        name: "{{ namespace }}"
-        state: present
-        
-    - name: 部署 PHP-FPM
-      k8s:
-        state: present
-        namespace: "{{ namespace }}"
-        definition:
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          echo "=== 创建命名空间 {{ use_namespace }} ==="
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+      register: namespace_result
+
+    - name: 创建 PHP-FPM 配置
+      copy:
+        dest: /tmp/php-fpm.yaml
+        content: |
           apiVersion: apps/v1
           kind: Deployment
           metadata:
             name: php-fpm
+            namespace: {{ use_namespace }}
             labels:
               app: php-fpm
           spec:
@@ -129,16 +119,12 @@
                     limits:
                       memory: "1Gi"
                       cpu: "1000m"
-                      
-    - name: 创建 PHP-FPM 服务
-      k8s:
-        state: present
-        namespace: "{{ namespace }}"
-        definition:
+          ---
           apiVersion: v1
           kind: Service
           metadata:
             name: php-fpm
+            namespace: {{ use_namespace }}
             labels:
               app: php-fpm
           spec:
@@ -146,25 +132,78 @@
             ports:
             - port: 9000
               targetPort: 9000
-              nodePort: "{{ nodeport | default(30900) }}"
+              nodePort: {{ use_nodeport }}
               name: fpm
             selector:
               app: php-fpm
-              
+
+    - name: 清理旧的部署
+      shell: |
+        echo "=== 清理旧的部署 ==="
+        /usr/local/bin/k3s kubectl delete -f /tmp/php-fpm.yaml || true
+        echo "等待资源清理完成..."
+        sleep 5
+      register: cleanup_result
+
+    - name: 应用 PHP-FPM 配置
+      shell: |
+        echo "=== 开始部署 PHP-FPM ==="
+        /usr/local/bin/k3s kubectl apply -f /tmp/php-fpm.yaml
+      register: apply_result
+
+    - name: 等待 Pod 创建
+      shell: |
+        for i in $(seq 1 30); do
+          echo "检查 Pod 创建进度... $i/30"
+          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm 2>/dev/null | grep -q php-fpm; then
+            echo "Pod 已创建"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "错误: Pod 未能成功创建"
+        exit 1
+      register: pod_creation_result
+
     - name: 等待 Pod 就绪
-      k8s_info:
-        kind: Pod
-        namespace: "{{ namespace }}"
-        label_selectors:
-          - app=php-fpm
-      register: pod_status
-      until: pod_status.resources | length > 0 and pod_status.resources[0].status.phase == "Running"
-      retries: 30
-      delay: 10
-      
+      shell: |
+        for i in $(seq 1 60); do
+          echo "检查 Pod 状态... $i/60"
+          STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.phase}')
+          if [ "$STATUS" = "Running" ]; then
+            READY=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+            if [ "$READY" = "true" ]; then
+              echo "Pod 已就绪"
+              exit 0
+            fi
+          fi
+          echo "当前状态: $STATUS"
+          /usr/local/bin/k3s kubectl describe pods -n {{ use_namespace }} -l app=php-fpm
+          sleep 2
+        done
+        echo "错误: Pod 未能在预期时间内就绪"
+        exit 1
+      register: pod_ready_result
+
     - name: 显示部署状态
+      shell: |
+        echo -e "\n=== PHP-FPM 部署状态 ==="
+        echo "Pod 状态:"
+        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o wide
+        
+        echo -e "\nService 状态:"
+        /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=php-fpm
+        
+        echo -e "\n=== 访问地址 ==="
+        NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+        echo "tcp://$NODE_IP:{{ use_nodeport }}"
+      register: status_result
+
+    - name: 显示部署结果
       debug:
-        msg:
-          - "命名空间: {{ namespace }}"
-          - "Pod 状态: {{ pod_status.resources[0].status.phase }}"
-          - "访问地址: tcp://{{ ansible_host }}:{{ nodeport | default(30900) }}" 
+        msg: 
+          - "{{ namespace_result.stdout_lines | default([]) }}"
+          - "{{ apply_result.stdout_lines | default([]) }}"
+          - "{{ pod_creation_result.stdout_lines | default([]) }}"
+          - "{{ pod_ready_result.stdout_lines | default([]) }}"
+          - "{{ status_result.stdout_lines | default([]) }}" 
