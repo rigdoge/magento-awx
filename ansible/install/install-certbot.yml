@@ -125,4 +125,25 @@
       
     - name: 显示自动续期配置结果
       debug:
-        msg: "{{ renew_result.stdout_lines }}" 
+        msg: "{{ renew_result.stdout_lines }}"
+
+    - name: 复制证书到 Nginx Pod
+      shell: |
+        set -x
+        echo "=== 复制证书到 Nginx Pod ==="
+        
+        # 获取 Pod 名称
+        POD_NAME=$(kubectl get pods -n {{ namespace }} -l app=nginx -o jsonpath='{.items[0].metadata.name}')
+        
+        # 创建证书目录
+        kubectl -n {{ namespace }} exec $POD_NAME -- mkdir -p /etc/letsencrypt/live/{{ domain }}
+        
+        # 复制证书文件
+        kubectl -n {{ namespace }} cp /etc/letsencrypt/live/{{ domain }}/fullchain.pem {{ namespace }}/$POD_NAME:/etc/letsencrypt/live/{{ domain }}/
+        kubectl -n {{ namespace }} cp /etc/letsencrypt/live/{{ domain }}/privkey.pem {{ namespace }}/$POD_NAME:/etc/letsencrypt/live/{{ domain }}/
+        kubectl -n {{ namespace }} cp /etc/letsencrypt/live/{{ domain }}/chain.pem {{ namespace }}/$POD_NAME:/etc/letsencrypt/live/{{ domain }}/
+      register: copy_result
+      
+    - name: 显示复制结果
+      debug:
+        msg: "{{ copy_result.stdout_lines }}" 
