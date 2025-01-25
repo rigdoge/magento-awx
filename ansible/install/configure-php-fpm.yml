@@ -89,7 +89,7 @@
         php_admin_value[error_log] = /proc/self/fd/2
         
         ; 缓冲区设置 - Magento 2 优化
-        php_admin_value[memory_limit] = 2G        ; Magento 2 推荐
+        php_admin_value[memory_limit] = 4G        ; Magento 2 官方推荐
         php_admin_value[max_execution_time] = 600 ; 长时间运行的进程
         php_admin_value[max_input_time] = 600     ; 文件上传等操作
         php_admin_value[post_max_size] = 64M      ; 大文件上传
@@ -111,8 +111,8 @@
         env[PATH] = /usr/local/bin:/usr/bin:/bin
         
         ; OPcache 设置 - Magento 2 优化
-        php_admin_value[opcache.memory_consumption] = 512      ; 更大的缓存
-        php_admin_value[opcache.interned_strings_buffer] = 32  ; 更多字符串缓存
+        php_admin_value[opcache.memory_consumption] = 1024     ; 更大的缓存，适配更大的内存
+        php_admin_value[opcache.interned_strings_buffer] = 64  ; 更多字符串缓存
         php_admin_value[opcache.max_accelerated_files] = 60000 ; Magento 2 有很多文件
         php_admin_value[opcache.revalidate_freq] = 2          ; 生产环境推荐
         php_admin_value[opcache.fast_shutdown] = 1
