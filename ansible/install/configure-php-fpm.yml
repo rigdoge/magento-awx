@@ -173,9 +173,35 @@
         echo "等待 PHP-FPM 重启..."
         sleep 5
         
-        # 检查进程
-        echo "检查 PHP-FPM 进程..."
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- ps aux | grep php-fpm
+        # 检查 PHP-FPM 状态
+        echo "检查 PHP-FPM 状态..."
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash << 'EOF'
+        set -x  # 启用调试模式
+        
+        # 检查 PHP-FPM 主进程
+        if [ -f /usr/local/var/run/php-fpm.pid ]; then
+          echo "PHP-FPM PID 文件存在"
+          PID=$(cat /usr/local/var/run/php-fpm.pid)
+          if [ -d "/proc/$PID" ]; then
+            echo "PHP-FPM 主进程 ($PID) 正在运行"
+          else
+            echo "PHP-FPM 主进程不存在"
+            exit 1
+          fi
+        else
+          echo "PHP-FPM PID 文件不存在"
+          exit 1
+        fi
+        
+        # 检查配置
+        echo "验证 PHP-FPM 配置..."
+        php-fpm -t
+        
+        # 检查 PHP 配置
+        echo "检查 PHP 配置..."
+        php -i | grep memory_limit
+        php -i | grep opcache
+        EOF
       register: verify_result
 
     - name: 显示验证结果
