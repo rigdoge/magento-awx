@@ -154,13 +154,20 @@
             
             # 开启调试日志
             error_log /var/log/nginx/error.log debug;
-            access_log /var/log/nginx/access.log combined;
+            access_log /var/log/nginx/access.log combined buffer=512k flush=1s;
             
             # 用于 Let's Encrypt 验证
             location ^~ /.well-known/acme-challenge/ {
-                root {{ webroot_path }};
+                alias {{ webroot_path }}/.well-known/acme-challenge/;
                 default_type text/plain;
-                try_files $uri =404;
+                autoindex on;
+                
+                # 添加调试信息
+                add_header X-Debug-Path $request_filename;
+                add_header X-Debug-Uri $uri;
+                
+                # 放宽文件访问限制
+                allow all;
             }
 
             # 暂时返回成功
