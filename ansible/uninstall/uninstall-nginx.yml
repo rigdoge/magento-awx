@@ -3,89 +3,37 @@
   hosts: all
   gather_facts: no
   vars:
-    namespaces:
-      - magento-1
-      - magento-2
-      - magento-3
+    use_namespace: "{{ namespace | default('default') }}"  # 默认使用 default 命名空间
+
   tasks:
     - name: 显示卸载信息
       debug:
-        msg: "准备从以下命名空间卸载 Nginx: {{ namespaces | join(', ') }}"
+        msg: "准备从命名空间 {{ use_namespace }} 卸载 Nginx"
 
-    - name: 卸载每个命名空间中的 Nginx
+    - name: 卸载 Nginx
       shell: |
         set -x
-        echo "=== 开始卸载命名空间 {{ item }} 中的 Nginx ==="
+        echo "=== 开始卸载命名空间 {{ use_namespace }} 中的 Nginx ==="
         
         echo "强制删除 Pod..."
-        PODS=$(kubectl get pods -n {{ item }} -l app=nginx -o name)
-        if [ ! -z "$PODS" ]; then
-          kubectl delete $PODS -n {{ item }} --force --grace-period=0 || true
-        fi
+        kubectl delete pod -n {{ use_namespace }} -l app=nginx --force --grace-period=0 || true
         
-        echo "强制删除 Deployment..."
-        kubectl delete deployment nginx -n {{ item }} --force --grace-period=0 || true
+        echo "删除 Deployment..."
+        kubectl delete deployment -n {{ use_namespace }} -l app=nginx || true
         
-        echo "强制删除 Service..."
-        kubectl delete service nginx -n {{ item }} --force --grace-period=0 || true
+        echo "删除 Service..."
+        kubectl delete service -n {{ use_namespace }} -l app=nginx || true
         
-        echo "强制删除 ConfigMap..."
-        kubectl delete configmap nginx-config -n {{ item }} --force --grace-period=0 || true
+        echo "删除 ConfigMap..."
+        kubectl delete configmap -n {{ use_namespace }} -l app=nginx || true
         
-        echo "等待资源删除..."
-        for i in {1..6}; do
-          echo "检查剩余资源 (尝试 $i/6)..."
-          
-          PODS=$(kubectl get pods -n {{ item }} -l app=nginx -o name)
-          DEPLOYMENTS=$(kubectl get deployment -n {{ item }} -l app=nginx -o name)
-          SERVICES=$(kubectl get service -n {{ item }} -l app=nginx -o name)
-          CONFIGMAPS=$(kubectl get configmap -n {{ item }} -l app=nginx -o name)
-          
-          if [ -z "$PODS" ] && [ -z "$DEPLOYMENTS" ] && [ -z "$SERVICES" ] && [ -z "$CONFIGMAPS" ]; then
-            echo "所有资源已成功删除"
-            break
-          fi
-          
-          if [ ! -z "$PODS" ]; then
-            echo "仍有 Pod 存在:"
-            kubectl get pods -n {{ item }} -l app=nginx -o wide
-            kubectl delete $PODS -n {{ item }} --force --grace-period=0 || true
-          fi
-          
-          if [ ! -z "$DEPLOYMENTS" ]; then
-            echo "仍有 Deployment 存在:"
-            kubectl get deployment -n {{ item }} -l app=nginx
-            kubectl delete $DEPLOYMENTS -n {{ item }} --force --grace-period=0 || true
-          fi
-          
-          if [ ! -z "$SERVICES" ]; then
-            echo "仍有 Service 存在:"
-            kubectl get service -n {{ item }} -l app=nginx
-            kubectl delete $SERVICES -n {{ item }} --force --grace-period=0 || true
-          fi
-          
-          if [ ! -z "$CONFIGMAPS" ]; then
-            echo "仍有 ConfigMap 存在:"
-            kubectl get configmap -n {{ item }} -l app=nginx
-            kubectl delete $CONFIGMAPS -n {{ item }} --force --grace-period=0 || true
-          fi
-          
-          sleep 10
-        done
+        echo "等待资源清理完成..."
+        sleep 5
         
-        echo "=== 最终检查 ==="
-        echo "Pods:"
-        kubectl get pods -n {{ item }} -l app=nginx -o wide
-        echo "Deployments:"
-        kubectl get deployment -n {{ item }} -l app=nginx
-        echo "Services:"
-        kubectl get svc -n {{ item }} -l app=nginx
-        echo "ConfigMaps:"
-        kubectl get configmap -n {{ item }} -l app=nginx
+        echo "验证清理结果..."
+        kubectl get all -n {{ use_namespace }} -l app=nginx
       register: uninstall_result
-      loop: "{{ namespaces }}"
 
     - name: 显示卸载结果
       debug:
-        msg: "{{ item.stdout_lines }}"
-      loop: "{{ uninstall_result.results }}" 
+        msg: "{{ uninstall_result.stdout_lines }}" 
