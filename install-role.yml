@@ -1,5 +1,5 @@
 ---
-- name: 安装和使用 Galaxy 角色
+- name: 使用 Galaxy 角色
   hosts: all
   vars:
     role_name: "{{ role | default('') }}"
@@ -11,14 +11,10 @@
         msg: "必须指定 role 参数"
       when: role_name == ''
 
-  tasks:
-    - name: 下载角色
-      command: "ansible-galaxy role install {{ role_name }}"
-      register: install_result
-
-    - name: 显示安装结果
-      debug:
-        var: install_result
-
   roles:
-    - "{{ role_name }}" 
+    - "{{ role_name }}"
+
+  post_tasks:
+    - name: 显示安装完成
+      debug:
+        msg: "角色 {{ role_name }} 已安装完成" 
