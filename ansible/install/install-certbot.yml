@@ -329,6 +329,28 @@
       debug:
         msg: "{{ renew_result.stdout_lines }}"
 
+    - name: 检查主机上的证书
+      shell: |
+        set -x
+        echo "=== 检查主机证书 ==="
+        
+        # 检查证书目录
+        echo "证书目录内容："
+        ls -la /etc/letsencrypt/live/{{ domain_name }}/ || true
+        
+        # 检查证书权限
+        echo "证书权限："
+        stat /etc/letsencrypt/live/{{ domain_name }}/fullchain.pem || true
+        
+        # 检查证书内容
+        echo "证书信息："
+        certbot certificates || true
+      register: host_cert_result
+      
+    - name: 显示主机证书检查结果
+      debug:
+        msg: "{{ host_cert_result.stdout_lines }}"
+
     - name: 复制证书到 Nginx Pod
       shell: |
         set -x
@@ -345,6 +367,7 @@
         # 创建 Pod 中的目录
         echo "创建证书目录..."
         kubectl -n {{ namespace }} exec $POD_NAME -- mkdir -p /etc/letsencrypt/live/{{ domain_name }}
+        kubectl -n {{ namespace }} exec $POD_NAME -- chmod 755 /etc/letsencrypt/live/{{ domain_name }}
         
         # 直接复制证书文件
         echo "复制证书文件..."
@@ -354,6 +377,8 @@
           ls -l /etc/letsencrypt/live/{{ domain_name }}/$cert
           # 复制文件
           kubectl -n {{ namespace }} cp /etc/letsencrypt/live/{{ domain_name }}/$cert {{ namespace }}/$POD_NAME:/etc/letsencrypt/live/{{ domain_name }}/$cert
+          # 设置权限
+          kubectl -n {{ namespace }} exec $POD_NAME -- chmod 644 /etc/letsencrypt/live/{{ domain_name }}/$cert
           # 验证目标文件
           kubectl -n {{ namespace }} exec $POD_NAME -- ls -l /etc/letsencrypt/live/{{ domain_name }}/$cert
         done
@@ -361,6 +386,10 @@
         # 验证复制结果
         echo "验证证书文件..."
         kubectl -n {{ namespace }} exec $POD_NAME -- ls -la /etc/letsencrypt/live/{{ domain_name }}/
+        
+        # 检查 Nginx 是否能读取证书
+        echo "测试 Nginx 读取证书..."
+        kubectl -n {{ namespace }} exec $POD_NAME -- nginx -t
       register: copy_result
       
     - name: 显示复制结果
