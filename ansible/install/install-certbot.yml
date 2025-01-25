@@ -90,12 +90,19 @@
     - name: 配置 nginx 以服务验证文件
       copy:
         content: |
+          # 临时配置，仅用于证书验证
           server {
             listen 80;
             server_name {{ domain_name }};
             
+            # 用于 Let's Encrypt 验证
             location /.well-known/acme-challenge/ {
                 root {{ webroot_path }};
+            }
+
+            # 其他请求重定向到 HTTPS
+            location / {
+                return 301 https://$host$request_uri;
             }
           }
         dest: /tmp/certbot-location.conf
