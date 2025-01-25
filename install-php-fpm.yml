@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('default') }}"
+    use_namespace: "{{ namespace | default('magento-shared') }}"
     use_nodeport: "{{ nodeport | default('30900') }}"
 
   tasks:
