@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('hawk') }}"
+    use_namespace: "hawk"  # 直接使用固定的命名空间
   tasks:
     - name: 强制删除 PHP-FPM Pod
       shell: |
