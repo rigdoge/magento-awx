@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('default') }}"
+    use_namespace: "{{ namespace | default('magento-shared') }}"  # 默认使用共享命名空间
     use_nodeport: "{{ nodeport | default('9000') }}"
     max_retries: "{{ retries | default('3') }}"
     init_delay: "{{ delay | default('30') }}"
@@ -26,15 +26,20 @@
         metadata:
           name: php-fpm
           namespace: {{ use_namespace }}
+          labels:
+            app: php-fpm
+            role: shared  # 标记为共享服务
         spec:
           selector:
             matchLabels:
               app: php-fpm
+              role: shared
           replicas: 1
           template:
             metadata:
               labels:
                 app: php-fpm
+                role: shared
             spec:
               securityContext:
                 runAsUser: 0
@@ -71,15 +76,25 @@
                   timeoutSeconds: 5
                   successThreshold: 1
                   failureThreshold: 3
+                volumeMounts:
+                - name: shared-data
+                  mountPath: /var/www/html
+              volumes:
+              - name: shared-data
+                emptyDir: {}  # 临时存储，后续可以改为持久存储
         ---
         apiVersion: v1
         kind: Service
         metadata:
           name: php-fpm
           namespace: {{ use_namespace }}
+          labels:
+            app: php-fpm
+            role: shared
         spec:
           selector:
             app: php-fpm
+            role: shared
           ports:
           - name: fpm
             port: 9000
