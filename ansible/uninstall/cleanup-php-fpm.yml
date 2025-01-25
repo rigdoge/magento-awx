@@ -10,6 +10,25 @@
       register: k3s_path
       changed_when: false
 
+    - name: 获取 Pod 详细信息
+      shell: |
+        echo "=== Pod 详细信息 ==="
+        POD_NAME=$({{ k3s_path.stdout }} kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
+        if [ ! -z "$POD_NAME" ]; then
+          echo "Pod 名称: $POD_NAME"
+          {{ k3s_path.stdout }} kubectl describe pod -n {{ use_namespace }} $POD_NAME
+          echo -e "\n=== Pod 日志 ==="
+          {{ k3s_path.stdout }} kubectl logs -n {{ use_namespace }} $POD_NAME --previous || true
+          {{ k3s_path.stdout }} kubectl logs -n {{ use_namespace }} $POD_NAME || true
+        else
+          echo "未找到 PHP-FPM Pod"
+        fi
+      register: pod_info
+
+    - name: 显示 Pod 信息
+      debug:
+        msg: "{{ pod_info.stdout_lines }}"
+
     - name: 强制删除 PHP-FPM Pod
       shell: |
         echo "=== 开始清理 PHP-FPM Pod ==="
