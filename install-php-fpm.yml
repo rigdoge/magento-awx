@@ -6,32 +6,19 @@
     use_nodeport: "{{ nodeport | default('30900') }}"
 
   tasks:
-    - name: 准备命名空间
-      shell: |
-        # 验证参数
-        if [ -z "{{ namespace | default('') }}" ]; then
-          echo "错误: 必须指定 namespace 参数"
-          exit 1
-        fi
-        
-        # 检查命名空间是否存在
-        if ! /usr/local/bin/k3s kubectl get namespace {{ namespace }} &>/dev/null; then
-          echo "创建命名空间 {{ namespace }}"
-          /usr/local/bin/k3s kubectl create namespace {{ namespace }}
-          
-          # 等待命名空间就绪
-          for i in $(seq 1 30); do
-            if /usr/local/bin/k3s kubectl get namespace {{ namespace }} &>/dev/null; then
-              echo "命名空间 {{ namespace }} 已就绪"
-              break
-            fi
-            echo "等待命名空间... $i/30"
-            sleep 2
-          done
-        else
-          echo "命名空间 {{ namespace }} 已存在"
-        fi
-      register: namespace_result
+    - name: 验证必要参数
+      fail:
+        msg: "必须指定 namespace 参数"
+      when: namespace is not defined or namespace == ''
+
+    - name: 检查命名空间是否存在
+      command: /usr/local/bin/k3s kubectl get namespace {{ namespace }}
+      register: namespace_exists
+      ignore_errors: yes
+
+    - name: 创建命名空间
+      command: /usr/local/bin/k3s kubectl create namespace {{ namespace }}
+      when: namespace_exists.rc != 0
       
     - name: 创建 PHP-FPM 配置
       copy:
@@ -223,7 +210,7 @@
     - name: 显示部署结果
       debug:
         msg: 
-          - "{{ namespace_result.stdout_lines | default([]) }}"
+          - "{{ cleanup_result.stdout_lines | default([]) }}"
           - "{{ apply_result.stdout_lines | default([]) }}"
           - "{{ pod_creation_result.stdout_lines | default([]) }}"
           - "{{ pod_ready_result.stdout_lines | default([]) }}"
