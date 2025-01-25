@@ -49,19 +49,30 @@
           sleep 5
         done
         
-        echo -e "\n=== 创建访问令牌 ==="
-        kubectl -n kubernetes-dashboard create token admin-user
+        echo -e "\n=== 创建访问信息 ===" > /tmp/dashboard-access.txt
+        echo "访问令牌:" >> /tmp/dashboard-access.txt
+        kubectl -n kubernetes-dashboard create token admin-user >> /tmp/dashboard-access.txt
         
-        echo -e "\n=== Dashboard 访问信息 ==="
-        echo "1. 运行以下命令启动代理:"
-        echo "   kubectl proxy"
-        echo
-        echo "2. 访问以下地址:"
-        echo "   http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/"
-        echo
-        echo "3. 使用上面的令牌登录"
+        echo -e "\n访问方式 1 - NodePort:" >> /tmp/dashboard-access.txt
+        kubectl -n kubernetes-dashboard patch svc kubernetes-dashboard -p '{"spec": {"type": "NodePort"}}' >/dev/null 2>&1
+        NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+        NODE_PORT=$(kubectl -n kubernetes-dashboard get svc kubernetes-dashboard -o jsonpath='{.spec.ports[0].nodePort}')
+        echo "https://$NODE_IP:$NODE_PORT" >> /tmp/dashboard-access.txt
+        
+        echo -e "\n访问方式 2 - kubectl proxy:" >> /tmp/dashboard-access.txt
+        echo "1. 运行命令: kubectl proxy" >> /tmp/dashboard-access.txt
+        echo "2. 访问地址: http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/" >> /tmp/dashboard-access.txt
+        
+        echo -e "\n=== Dashboard 访问信息已保存到 /tmp/dashboard-access.txt ==="
+        cat /tmp/dashboard-access.txt
       register: deploy_result
+
+    - name: 显示访问信息
+      shell: cat /tmp/dashboard-access.txt
+      register: access_info
 
     - name: 显示部署结果
       debug:
-        msg: "{{ deploy_result.stdout_lines }}" 
+        msg: 
+          - "{{ deploy_result.stdout_lines }}"
+          - "{{ access_info.stdout_lines }}" 
