@@ -3,27 +3,31 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('magento-shared') }}"
     use_nodeport: "{{ nodeport | default('30900') }}"
 
-  tasks:
+  pre_tasks:
+    - name: 验证必要参数
+      fail:
+        msg: "必须指定 namespace 参数"
+      when: namespace is not defined or namespace == ''
+
     - name: 验证命名空间是否存在
       shell: |
-        /usr/local/bin/k3s kubectl get namespace {{ use_namespace }} &>/dev/null
+        /usr/local/bin/k3s kubectl get namespace {{ namespace }} &>/dev/null
       register: namespace_exists
       ignore_errors: true
 
     - name: 创建命名空间
       shell: |
-        /usr/local/bin/k3s kubectl create namespace {{ use_namespace }}
+        /usr/local/bin/k3s kubectl create namespace {{ namespace }}
       when: namespace_exists.rc != 0
       register: namespace_created
 
     - name: 等待命名空间就绪
       shell: |
         for i in $(seq 1 30); do
-          if /usr/local/bin/k3s kubectl get namespace {{ use_namespace }} &>/dev/null; then
-            echo "命名空间 {{ use_namespace }} 已就绪"
+          if /usr/local/bin/k3s kubectl get namespace {{ namespace }} &>/dev/null; then
+            echo "命名空间 {{ namespace }} 已就绪"
             exit 0
           fi
           echo "等待命名空间... $i/30"
@@ -42,7 +46,7 @@
           kind: Deployment
           metadata:
             name: php-fpm
-            namespace: {{ use_namespace }}
+            namespace: {{ namespace }}
             labels:
               app: php-fpm
           spec:
@@ -121,14 +125,14 @@
                   readinessProbe:
                     tcpSocket:
                       port: 9000
-                    initialDelaySeconds: 180  # 增加延迟时间
+                    initialDelaySeconds: 180
                     periodSeconds: 10
                     timeoutSeconds: 10
                     failureThreshold: 3
                   livenessProbe:
                     tcpSocket:
                       port: 9000
-                    initialDelaySeconds: 240  # 增加延迟时间
+                    initialDelaySeconds: 240
                     periodSeconds: 20
                     timeoutSeconds: 10
                     failureThreshold: 3
@@ -144,7 +148,7 @@
           kind: Service
           metadata:
             name: php-fpm
-            namespace: {{ use_namespace }}
+            namespace: {{ namespace }}
             labels:
               app: php-fpm
           spec:
@@ -162,7 +166,7 @@
         echo "=== 清理旧的部署 ==="
         /usr/local/bin/k3s kubectl delete -f /tmp/php-fpm.yaml || true
         echo "等待资源清理完成..."
-        sleep 10  # 增加等待时间
+        sleep 10
       register: cleanup_result
 
     - name: 应用 PHP-FPM 配置
@@ -173,9 +177,9 @@
 
     - name: 等待 Pod 创建
       shell: |
-        for i in $(seq 1 60); do  # 增加等待时间
+        for i in $(seq 1 60); do
           echo "检查 Pod 创建进度... $i/60"
-          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm 2>/dev/null | grep -q php-fpm; then
+          if /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=php-fpm 2>/dev/null | grep -q php-fpm; then
             echo "Pod 已创建"
             exit 0
           fi
@@ -187,19 +191,19 @@
 
     - name: 等待 Pod 就绪
       shell: |
-        for i in $(seq 1 120); do  # 增加等待时间
+        for i in $(seq 1 120); do
           echo "检查 Pod 状态... $i/120"
-          STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.phase}')
+          STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.phase}')
           if [ "$STATUS" = "Running" ]; then
-            READY=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+            READY=$(/usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
             if [ "$READY" = "true" ]; then
               echo "Pod 已就绪"
               exit 0
             fi
           fi
-          if [ "$((i % 10))" = "0" ]; then  # 每 10 次循环显示一次详细信息
+          if [ "$((i % 10))" = "0" ]; then
             echo "当前状态: $STATUS"
-            /usr/local/bin/k3s kubectl describe pods -n {{ use_namespace }} -l app=php-fpm
+            /usr/local/bin/k3s kubectl describe pods -n {{ namespace }} -l app=php-fpm
           fi
           sleep 2
         done
@@ -211,10 +215,10 @@
       shell: |
         echo -e "\n=== PHP-FPM 部署状态 ==="
         echo "Pod 状态:"
-        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o wide
+        /usr/local/bin/k3s kubectl get pods -n {{ namespace }} -l app=php-fpm -o wide
         
         echo -e "\nService 状态:"
-        /usr/local/bin/k3s kubectl get svc -n {{ use_namespace }} -l app=php-fpm
+        /usr/local/bin/k3s kubectl get svc -n {{ namespace }} -l app=php-fpm
         
         echo -e "\n=== 访问地址 ==="
         NODE_IP=$(/usr/local/bin/k3s kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
