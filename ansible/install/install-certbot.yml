@@ -157,13 +157,13 @@
             access_log /var/log/nginx/access.log combined buffer=512k flush=1s;
             
             # 用于 Let's Encrypt 验证
-            location ^~ /.well-known/acme-challenge/ {
-                alias {{ webroot_path }}/.well-known/acme-challenge/;
+            location /.well-known/acme-challenge/ {
+                root {{ webroot_path }};
                 default_type text/plain;
                 autoindex on;
                 
                 # 添加调试信息
-                add_header X-Debug-Path $request_filename;
+                add_header X-Debug-Path $document_root$uri;
                 add_header X-Debug-Uri $uri;
                 
                 # 放宽文件访问限制
@@ -233,9 +233,30 @@
       shell: |
         set -x
         echo "=== 创建测试文件 ==="
-        echo "test123" > /tmp/test.txt
-        kubectl -n {{ namespace }} cp /tmp/test.txt {{ namespace }}/{{ nginx_pod.stdout }}:{{ webroot_path }}/.well-known/acme-challenge/test.txt
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ls -la {{ webroot_path }}/.well-known/acme-challenge/test.txt
+        
+        # 在主机上创建目录和测试文件
+        mkdir -p {{ webroot_path }}/.well-known/acme-challenge
+        echo "test123" > {{ webroot_path }}/.well-known/acme-challenge/test.txt
+        chmod -R 755 {{ webroot_path }}
+        chmod 644 {{ webroot_path }}/.well-known/acme-challenge/test.txt
+        
+        # 显示主机上的文件
+        echo "主机上的文件："
+        ls -la {{ webroot_path }}/.well-known/acme-challenge/
+        cat {{ webroot_path }}/.well-known/acme-challenge/test.txt
+        
+        # 确保 Pod 中的目录存在
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- mkdir -p {{ webroot_path }}/.well-known/acme-challenge
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- chmod -R 755 {{ webroot_path }}
+        
+        # 复制测试文件到 Pod
+        kubectl -n {{ namespace }} cp {{ webroot_path }}/.well-known/acme-challenge/test.txt {{ namespace }}/{{ nginx_pod.stdout }}:{{ webroot_path }}/.well-known/acme-challenge/test.txt
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- chmod 644 {{ webroot_path }}/.well-known/acme-challenge/test.txt
+        
+        # 显示 Pod 中的文件
+        echo "Pod 中的文件："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ls -la {{ webroot_path }}/.well-known/acme-challenge/
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- cat {{ webroot_path }}/.well-known/acme-challenge/test.txt
       register: test_file_result
       
     - name: 显示测试文件创建结果
