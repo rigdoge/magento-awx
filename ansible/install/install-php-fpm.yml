@@ -5,6 +5,8 @@
   vars:
     use_namespace: "{{ namespace | default('default') }}"
     use_nodeport: "{{ nodeport | default('9000') }}"
+    max_retries: "{{ retries | default('3') }}"
+    init_delay: "{{ delay | default('30') }}"
 
   tasks:
     - name: 检查命名空间
@@ -37,6 +39,13 @@
               initContainers:
               - name: init-php
                 image: php:8.3-fpm
+                resources:
+                  requests:
+                    cpu: "1"
+                    memory: "1Gi"
+                  limits:
+                    cpu: "2"
+                    memory: "2Gi"
                 command:
                 - /bin/sh
                 - -c
@@ -46,41 +55,75 @@
                   
                   echo "=== 开始初始化 PHP 环境 ==="
                   
-                  # 创建共享目录
+                  # 创建共享目录并设置权限
                   mkdir -p /shared-php
+                  chown -R www-data:www-data /shared-php
                   
                   # 更新包管理器（添加重试机制）
-                  for i in $(seq 1 3); do
-                    echo "尝试更新包管理器... 第 $i 次"
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                    echo "尝试更新包管理器... 第 $attempt 次"
                     if apt-get update; then
                       break
                     fi
-                    if [ $i -eq 3 ]; then
+                    if [ $attempt -eq $max_attempts ]; then
                       echo "包管理器更新失败"
                       exit 1
                     fi
+                    attempt=$((attempt + 1))
                     sleep 5
                   done
                   
                   # 安装系统依赖
                   echo "安装系统依赖..."
-                  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                    libfreetype6-dev \
-                    libjpeg62-turbo-dev \
-                    libpng-dev \
-                    libzip-dev \
-                    libxml2-dev \
-                    libxslt1-dev \
-                    libicu-dev \
-                    libonig-dev \
-                    libsodium-dev \
-                    libcurl4-openssl-dev \
-                    unzip || exit 1
+                  for i in $(seq 1 3); do
+                    echo "尝试安装系统依赖... 第 $i 次"
+                    if DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                      libfreetype6-dev \
+                      libjpeg62-turbo-dev \
+                      libpng-dev \
+                      libzip-dev \
+                      libxml2-dev \
+                      libxslt1-dev \
+                      libicu-dev \
+                      libonig-dev \
+                      libsodium-dev \
+                      libcurl4-openssl-dev \
+                      unzip; then
+                      break
+                    fi
+                    if [ $i -eq 3 ]; then
+                      echo "系统依赖安装失败"
+                      exit 1
+                    fi
+                    sleep 5
+                  done
                   
                   # 清理 apt 缓存
                   apt-get clean && rm -rf /var/lib/apt/lists/*
                   
                   echo "=== 开始安装 PHP 扩展 ==="
+                  
+                  install_extension() {
+                    local ext=$1
+                    local max_attempts=3
+                    local attempt=1
+                    
+                    echo "安装扩展: $ext"
+                    while [ $attempt -le $max_attempts ]; do
+                      echo "尝试安装 $ext... 第 $attempt 次"
+                      if docker-php-ext-install -j$(nproc) $ext; then
+                        return 0
+                      fi
+                      if [ $attempt -eq $max_attempts ]; then
+                        echo "扩展 $ext 安装失败"
+                        return 1
+                      fi
+                      attempt=$((attempt + 1))
+                      sleep 5
+                    done
+                  }
                   
                   # 配置 GD
                   echo "配置 GD 扩展..."
@@ -89,29 +132,25 @@
                   # 分批安装扩展
                   echo "安装基础扩展..."
                   for ext in bcmath ctype curl dom fileinfo; do
-                    echo "安装扩展: $ext"
-                    docker-php-ext-install -j$(nproc) $ext || exit 1
+                    install_extension $ext || exit 1
                   done
                   
                   echo "安装 GD 扩展..."
-                  docker-php-ext-install -j$(nproc) gd || exit 1
+                  install_extension gd || exit 1
                   
                   echo "安装数据库和编码扩展..."
                   for ext in iconv intl mbstring pdo_mysql; do
-                    echo "安装扩展: $ext"
-                    docker-php-ext-install -j$(nproc) $ext || exit 1
+                    install_extension $ext || exit 1
                   done
                   
                   echo "安装 XML 相关扩展..."
                   for ext in simplexml soap xml xmlwriter xsl; do
-                    echo "安装扩展: $ext"
-                    docker-php-ext-install -j$(nproc) $ext || exit 1
+                    install_extension $ext || exit 1
                   done
                   
                   echo "安装其他扩展..."
                   for ext in sockets sodium tokenizer zip opcache; do
-                    echo "安装扩展: $ext"
-                    docker-php-ext-install -j$(nproc) $ext || exit 1
+                    install_extension $ext || exit 1
                   done
                   
                   echo "=== 配置 PHP ==="
@@ -124,22 +163,33 @@
                   cat > /usr/local/etc/php/conf.d/magento.ini << 'EOF'
                   memory_limit = 756M
                   max_execution_time = 600
+                  upload_max_filesize = 64M
+                  post_max_size = 64M
+                  max_input_vars = 3000
+                  date.timezone = UTC
                   EOF
                   
                   # 配置 OPcache
                   cat > /usr/local/etc/php/conf.d/opcache.ini << 'EOF'
                   opcache.enable=1
-                  opcache.memory_consumption=128
-                  opcache.max_accelerated_files=4000
+                  opcache.memory_consumption=256
+                  opcache.max_accelerated_files=60000
+                  opcache.revalidate_freq=2
+                  opcache.save_comments=1
                   EOF
                   
                   # 配置 PHP-FPM
                   cat > /usr/local/etc/php-fpm.d/www.conf << 'EOF'
+                  [www]
+                  user = www-data
+                  group = www-data
+                  listen = 9000
                   pm = dynamic
-                  pm.max_children = 5
-                  pm.start_servers = 2
-                  pm.min_spare_servers = 1
-                  pm.max_spare_servers = 3
+                  pm.max_children = 10
+                  pm.start_servers = 4
+                  pm.min_spare_servers = 2
+                  pm.max_spare_servers = 6
+                  pm.max_requests = 500
                   EOF
                   
                   echo "=== 复制配置文件 ==="
@@ -148,6 +198,12 @@
                   echo "复制 PHP-FPM 配置..."
                   cp -r /usr/local/etc/php-fpm.d /shared-php/ || exit 1
                   
+                  # 设置配置文件权限
+                  chown -R www-data:www-data /shared-php/php
+                  chown -R www-data:www-data /shared-php/php-fpm.d
+                  chmod -R 755 /shared-php/php
+                  chmod -R 755 /shared-php/php-fpm.d
+                  
                   echo "=== 初始化完成 ==="
                 volumeMounts:
                 - name: shared-php-config
@@ -155,6 +211,9 @@
               containers:
               - name: php-fpm
                 image: php:8.3-fpm
+                securityContext:
+                  runAsUser: 33  # www-data 用户
+                  runAsGroup: 33  # www-data 组
                 ports:
                 - containerPort: 9000
                 resources:
@@ -167,13 +226,19 @@
                 readinessProbe:
                   tcpSocket:
                     port: 9000
-                  initialDelaySeconds: 5
+                  initialDelaySeconds: 30
                   periodSeconds: 10
+                  timeoutSeconds: 5
+                  successThreshold: 1
+                  failureThreshold: 3
                 livenessProbe:
                   tcpSocket:
                     port: 9000
-                  initialDelaySeconds: 20
+                  initialDelaySeconds: 60
                   periodSeconds: 20
+                  timeoutSeconds: 5
+                  successThreshold: 1
+                  failureThreshold: 3
                 volumeMounts:
                 - name: shared-php-config
                   mountPath: /usr/local/etc/php
@@ -204,35 +269,49 @@
       shell: |
         kubectl delete -f /tmp/php-fpm.yaml || true
         echo "等待旧资源清理完成..."
-        sleep 5
+        sleep 10
 
     - name: 应用 PHP-FPM 配置
       shell: |
         kubectl apply -f /tmp/php-fpm.yaml
         echo "等待 Pod 创建..."
         
-        for i in $(seq 1 30); do
+        for i in $(seq 1 {{ max_retries }}); do
           echo "检查 Pod 创建进度... 第 $i 次"
           if kubectl get pods -n {{ use_namespace }} -l app=php-fpm --no-headers | grep -q .; then
             echo "Pod 已创建"
             break
           fi
-          sleep 10
+          if [ $i -eq {{ max_retries }} ]; then
+            echo "Pod 创建超时"
+            exit 1
+          fi
+          sleep {{ init_delay }}
         done
         
         POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
         echo "Pod 名称: $POD_NAME"
         
-        for i in $(seq 1 30); do
+        for i in $(seq 1 {{ max_retries }}); do
           echo "检查 Pod 状态... 第 $i 次"
           STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
           if [ "$STATUS" = "Running" ]; then
             echo "Pod 已就绪"
-            break
+            
+            # 验证 PHP-FPM 是否正常运行
+            echo "验证 PHP-FPM 状态..."
+            if kubectl exec -n {{ use_namespace }} $POD_NAME -- php-fpm -t; then
+              echo "PHP-FPM 配置检查通过"
+              break
+            fi
           fi
-          echo "当前状态: $STATUS"
-          kubectl describe pod -n {{ use_namespace }} $POD_NAME
-          sleep 10
+          if [ $i -eq {{ max_retries }} ]; then
+            echo "Pod 启动失败，当前状态: $STATUS"
+            kubectl describe pod -n {{ use_namespace }} $POD_NAME
+            exit 1
+          fi
+          echo "当前状态: $STATUS，等待下一次检查..."
+          sleep {{ init_delay }}
         done
       register: deploy_result
 
