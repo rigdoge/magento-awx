@@ -1,0 +1,38 @@
+---
+- name: 清理卡住的 PHP-FPM Pod
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('hawk') }}"
+  tasks:
+    - name: 强制删除 PHP-FPM Pod
+      shell: |
+        echo "=== 开始清理 PHP-FPM Pod ==="
+        # 强制删除 Pod
+        /usr/local/bin/k3s kubectl delete pod -n {{ use_namespace }} -l app=php-fpm --force --grace-period=0 || true
+        
+        # 删除 Deployment
+        /usr/local/bin/k3s kubectl delete deployment -n {{ use_namespace }} php-fpm || true
+        
+        # 删除 Service
+        /usr/local/bin/k3s kubectl delete service -n {{ use_namespace }} php-fpm || true
+        
+        # 等待资源完全删除
+        echo "等待资源清理完成..."
+        sleep 5
+        
+        # 检查清理结果
+        echo -e "\n=== 清理结果 ==="
+        echo "Pod 状态:"
+        /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm
+        
+        echo -e "\nDeployment 状态:"
+        /usr/local/bin/k3s kubectl get deployment -n {{ use_namespace }} php-fpm
+        
+        echo -e "\nService 状态:"
+        /usr/local/bin/k3s kubectl get service -n {{ use_namespace }} php-fpm
+      register: cleanup_result
+
+    - name: 显示清理结果
+      debug:
+        msg: "{{ cleanup_result.stdout_lines }}" 
