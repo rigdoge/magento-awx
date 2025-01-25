@@ -1,31 +1,38 @@
 ---
-- name: 检查 Nginx Ingress Controller 状态
+- name: 检查所有命名空间的 Nginx 资源
   hosts: all
   gather_facts: no
   tasks:
-    - name: 检查 Ingress Controller Pod
+    - name: 列出所有命名空间
       shell: |
-        echo "=== 检查 Ingress Controller Pod ==="
-        kubectl get pods -n ingress-nginx
+        echo "=== 列出所有命名空间 ==="
+        kubectl get ns
         
-        echo -e "\n=== 检查 Ingress Controller 服务 ==="
-        kubectl get svc -n ingress-nginx
+        echo -e "\n=== 列出所有命名空间中的 Nginx Pod ==="
+        for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
+          echo -e "\n命名空间: $ns"
+          kubectl get pods -n $ns | grep -i nginx || echo "没有 Nginx Pod"
+        done
         
-        echo -e "\n=== 检查 Ingress Controller 配置 ==="
+        echo -e "\n=== 列出所有命名空间中的 Nginx Service ==="
+        for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
+          echo -e "\n命名空间: $ns"
+          kubectl get svc -n $ns | grep -i nginx || echo "没有 Nginx Service"
+        done
+        
+        echo -e "\n=== 列出所有命名空间中的 Nginx Ingress ==="
+        for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
+          echo -e "\n命名空间: $ns"
+          kubectl get ingress -n $ns | grep -i nginx || echo "没有 Nginx Ingress"
+        done
+        
+        echo -e "\n=== 列出所有 IngressClass ==="
         kubectl get ingressclass
-        
-        echo -e "\n=== 检查 Ingress Controller Pod 日志 ==="
-        NGINX_POD=$(kubectl get pods -n ingress-nginx -l app.kubernetes.io/component=controller -o jsonpath='{.items[0].metadata.name}')
-        if [ ! -z "$NGINX_POD" ]; then
-          kubectl logs -n ingress-nginx $NGINX_POD --tail=50
-        else
-          echo "未找到 Ingress Controller Pod"
-        fi
-      register: ingress_check
+      register: nginx_check
 
     - name: 显示检查结果
       debug:
-        var: ingress_check.stdout_lines
+        var: nginx_check.stdout_lines
 
     - name: 检查网络连接
       shell: |
