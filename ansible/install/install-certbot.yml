@@ -118,27 +118,17 @@
     - name: 等待新的 Pod 就绪
       shell: |
         set -x
-        echo "=== 等待新的 Pod 就绪 ==="
-        
         # 等待 Pod 变为 Running 状态
         for i in $(seq 1 12); do
-          echo "第 $i 次检查..."
           POD_STATUS=$(kubectl -n {{ namespace }} get pods -l app=nginx -o jsonpath='{.items[0].status.phase}')
           if [ "$POD_STATUS" = "Running" ]; then
-            echo "Pod 已就绪"
             break
           fi
-          echo "Pod 状态: $POD_STATUS，等待5秒..."
           sleep 5
         done
         
         # 获取新的 Pod 名称
-        NEW_POD=$(kubectl -n {{ namespace }} get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}')
-        if [ -z "$NEW_POD" ]; then
-          echo "未找到新的 Nginx Pod"
-          exit 1
-        fi
-        echo $NEW_POD
+        kubectl -n {{ namespace }} get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}'
       register: new_pod
       
     - name: 显示新 Pod 信息
