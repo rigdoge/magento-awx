@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('default') }}"
+    use_namespace: "{{ namespace | default('hawk') }}"
     use_nodeport: "{{ nodeport | default('30900') }}"
   tasks:
     - name: 创建命名空间
@@ -48,8 +48,14 @@
                         - /bin/sh
                         - -c
                         - |
+                          set -e
+                          echo "=== 开始安装依赖和扩展 ==="
+                          
+                          # 更新包列表
+                          apt-get update
+                          
                           # 安装基础依赖
-                          apt-get update && apt-get install -y \
+                          apt-get install -y \
                             libfreetype6-dev \
                             libjpeg62-turbo-dev \
                             libpng-dev \
@@ -59,66 +65,69 @@
                             libzip-dev \
                             libonig-dev \
                             libsodium-dev \
-                            libcurl4-openssl-dev \
-                            && rm -rf /var/lib/apt/lists/*
-
-                          # 配置并安装 GD
+                            libcurl4-openssl-dev
+                          
+                          # 清理 apt 缓存
+                          rm -rf /var/lib/apt/lists/*
+                          
+                          echo "=== 配置并安装 PHP 扩展 ==="
+                          
+                          # 配置 GD
                           docker-php-ext-configure gd --with-freetype --with-jpeg
                           
-                          # 安装 PHP 扩展
-                          docker-php-ext-install -j$(nproc) \
-                            bcmath \
-                            ctype \
-                            curl \
-                            dom \
-                            fileinfo \
-                            filter \
-                            gd \
-                            hash \
-                            iconv \
-                            intl \
-                            mbstring \
-                            pdo_mysql \
-                            simplexml \
-                            soap \
-                            sockets \
-                            sodium \
-                            tokenizer \
-                            xml \
-                            xmlwriter \
-                            xsl \
-                            zip
+                          # 分批安装扩展以减少内存使用
+                          echo "安装基础扩展..."
+                          docker-php-ext-install -j2 bcmath ctype curl dom
                           
-                          # 配置 OPcache
+                          echo "安装文件处理扩展..."
+                          docker-php-ext-install -j2 fileinfo gd
+                          
+                          echo "安装字符串处理扩展..."
+                          docker-php-ext-install -j2 iconv intl mbstring
+                          
+                          echo "安装数据库扩展..."
+                          docker-php-ext-install -j2 pdo_mysql
+                          
+                          echo "安装 XML 相关扩展..."
+                          docker-php-ext-install -j2 simplexml soap xml xmlwriter xsl
+                          
+                          echo "安装其他扩展..."
+                          docker-php-ext-install -j2 sockets sodium tokenizer zip
+                          
+                          echo "=== 配置 OPcache ==="
                           docker-php-ext-enable opcache
-                          echo "opcache.enable=1" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
-                          echo "opcache.enable_cli=1" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
-                          echo "opcache.memory_consumption=128" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
-                          echo "opcache.interned_strings_buffer=8" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
-                          echo "opcache.max_accelerated_files=4000" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
-                          echo "opcache.revalidate_freq=60" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
-                          echo "opcache.fast_shutdown=1" >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                          {
+                            echo "opcache.enable=1"
+                            echo "opcache.enable_cli=1"
+                            echo "opcache.memory_consumption=128"
+                            echo "opcache.interned_strings_buffer=8"
+                            echo "opcache.max_accelerated_files=4000"
+                            echo "opcache.revalidate_freq=60"
+                            echo "opcache.fast_shutdown=1"
+                          } >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                          
+                          echo "=== 安装完成 ==="
                   readinessProbe:
                     tcpSocket:
                       port: 9000
-                    initialDelaySeconds: 180
+                    initialDelaySeconds: 300
                     periodSeconds: 10
-                    timeoutSeconds: 10
+                    timeoutSeconds: 5
                     failureThreshold: 3
                   livenessProbe:
                     tcpSocket:
                       port: 9000
-                    initialDelaySeconds: 240
+                    initialDelaySeconds: 360
                     periodSeconds: 20
-                    timeoutSeconds: 10
+                    timeoutSeconds: 5
                     failureThreshold: 3
                   resources:
                     requests:
+                      memory: "256Mi"
+                      cpu: "250m"
+                    limits:
                       memory: "512Mi"
                       cpu: "500m"
-                    limits:
-                      memory: "1Gi"
-                      cpu: "1000m"
           ---
           apiVersion: v1
           kind: Service
@@ -194,7 +203,7 @@
           /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} $POD_NAME
           
           echo "=== Pod 日志 ==="
-          /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} $POD_NAME --tail=50
+          /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} $POD_NAME --tail=50 || true
           
           sleep 5
         done
@@ -220,6 +229,7 @@
       debug:
         msg: 
           - "{{ namespace_result.stdout_lines | default([]) }}"
+          - "{{ cleanup_result.stdout_lines | default([]) }}"
           - "{{ apply_result.stdout_lines | default([]) }}"
           - "{{ pod_creation_result.stdout_lines | default([]) }}"
           - "{{ pod_ready_result.stdout_lines | default([]) }}"
