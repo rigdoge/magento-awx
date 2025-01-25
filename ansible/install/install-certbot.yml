@@ -7,7 +7,7 @@
     namespace: "{{ namespace | default('default') }}"  # 可在 AWX 中覆盖
     domain: "{{ domain_name | default('awx.tschenfeng.com') }}"  # 可在 AWX 中覆盖
     email: "{{ email_address | default('ssl@tschenfeng.com') }}"  # 可在 AWX 中覆盖
-    staging: "{{ staging | default('yes') }}"  # 默认使用 staging 环境，避免触发限制
+    use_staging: "{{ staging | default(true) }}"  # 默认使用 staging 环境，避免触发限制
   
   tasks:
     - name: 获取 Nginx Pod 名称
@@ -86,7 +86,7 @@
           --agree-tos \
           --email {{ email }} \
           -d {{ domain }} \
-          {% if staging == 'yes' %}--staging{% endif %}
+          {% if use_staging %}--staging{% endif %}
         
         # 启动 Nginx
         kubectl -n {{ namespace }} scale deployment nginx --replicas=1
@@ -102,7 +102,7 @@
         echo "=== 配置自动续期 ==="
         
         # 测试自动续期
-        certbot renew --dry-run {% if staging == 'yes' %}--staging{% endif %}
+        certbot renew --dry-run {% if use_staging %}--staging{% endif %}
         
         # 添加续期前后的钩子
         mkdir -p /etc/letsencrypt/renewal-hooks/pre
