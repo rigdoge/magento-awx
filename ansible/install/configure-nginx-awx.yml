@@ -10,16 +10,7 @@
   tasks:
     - name: 获取 Nginx Pod 名称
       shell: |
-        set -x
-        echo "=== 获取 Nginx Pod ==="
-        
-        # 获取 Pod 名称
-        POD_NAME=$(kubectl get pods -n {{ namespace }} -l app=nginx -o jsonpath='{.items[0].metadata.name}')
-        if [ -z "$POD_NAME" ]; then
-          echo "未找到 Nginx Pod"
-          exit 1
-        fi
-        echo $POD_NAME
+        kubectl get pods -n {{ namespace }} -l app=nginx -o jsonpath='{.items[0].metadata.name}'
       register: pod_name
       
     - name: 显示 Pod 信息
@@ -70,7 +61,7 @@
 
             # 代理设置
             location / {
-                proxy_pass http://awx-demo-service.awx.svc.cluster.local:80;  # 使用完整的 Kubernetes 服务名
+                proxy_pass http://awx-demo-service.awx.svc.cluster.local:80;
                 proxy_http_version 1.1;
                 proxy_set_header Upgrade $http_upgrade;
                 proxy_set_header Connection "upgrade";
@@ -94,7 +85,7 @@
         EOF
         
         # 复制配置文件到 Pod
-        kubectl -n {{ namespace }} cp /tmp/awx.conf {{ pod_name.stdout }}:/etc/nginx/conf.d/awx.conf
+        kubectl -n {{ namespace }} cp /tmp/awx.conf {{ namespace }}/{{ pod_name.stdout }}:/etc/nginx/conf.d/awx.conf
         
         # 删除临时文件
         rm -f /tmp/awx.conf
