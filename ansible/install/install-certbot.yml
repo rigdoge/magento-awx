@@ -142,6 +142,7 @@
           --email {{ email_address }} \
           --agree-tos \
           --non-interactive \
+          --debug-challenges \
           {% if use_staging %}--staging{% endif %}
         
         # 启动 Nginx
