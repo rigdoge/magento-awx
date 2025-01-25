@@ -7,15 +7,24 @@
     email_address: ssl@tschenfeng.com
 
   tasks:
-    - name: 检查 kubeconfig 环境变量
+    - name: 检查和配置 K3s kubeconfig
       shell: |
-        echo "KUBECONFIG=$KUBECONFIG"
-        echo "检查 ~/.kube/config 是否存在"
-        ls -la ~/.kube/config || echo "kubeconfig 文件不存在"
-        echo "测试 kubectl 连接"
-        kubectl cluster-info || echo "无法连接到集群"
+        echo "检查 K3s kubeconfig..."
+        if [ -f /etc/rancher/k3s/k3s.yaml ]; then
+          echo "找到 K3s kubeconfig"
+          mkdir -p ~/.kube
+          cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+          chmod 600 ~/.kube/config
+          echo "已复制 kubeconfig 到 ~/.kube/config"
+        else
+          echo "未找到 K3s kubeconfig"
+          exit 1
+        fi
+        
+        echo "测试 kubectl 连接..."
+        kubectl cluster-info
       register: kube_check
-      ignore_errors: yes
+      become: yes  # 使用 sudo 权限
 
     - name: 显示 kubeconfig 检查结果
       debug:
