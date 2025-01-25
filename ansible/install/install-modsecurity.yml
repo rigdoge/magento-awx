@@ -34,17 +34,28 @@
         # 更新包管理器
         apt-get update
         
-        # 安装依赖
+        # 添加 nginx 仓库
+        apt-get install -y curl gnupg2 ca-certificates lsb-release
+        echo "deb http://nginx.org/packages/ubuntu $(lsb_release -cs) nginx" > /etc/apt/sources.list.d/nginx.list
+        curl -fsSL https://nginx.org/keys/nginx_signing.key | apt-key add -
+        
+        # 添加 ModSecurity 仓库
+        apt-get install -y software-properties-common
+        add-apt-repository -y ppa:ondrej/nginx-mainline
+        
+        # 再次更新并安装
+        apt-get update
         apt-get install -y \
+          nginx \
           libmodsecurity3 \
           libmodsecurity-dev \
-          nginx-module-security || true
+          nginx-module-modsecurity || true
         
         # 创建配置目录
         mkdir -p /etc/nginx/modsecurity
         
-        # 复制默认配置
-        cp /etc/modsecurity/modsecurity.conf-recommended /etc/nginx/modsecurity/modsecurity.conf
+        # 下载默认配置
+        curl -fsSL https://raw.githubusercontent.com/SpiderLabs/ModSecurity/v3/master/modsecurity.conf-recommended > /etc/nginx/modsecurity/modsecurity.conf
       register: install_result
       
     - name: 显示安装结果
