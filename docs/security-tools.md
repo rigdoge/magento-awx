@@ -21,6 +21,14 @@
   2. 只能配置安装它的那个命名空间中的 Nginx
   3. 如果有多个命名空间需要证书，需要多次运行安装脚本
 
+### ModSecurity
+- 安装位置：Nginx Pod 内部
+- 作用范围：单个命名空间
+- 配置要求：
+  1. 需要在每个 Nginx Pod 中单独安装
+  2. 只能保护安装它的那个命名空间中的 Nginx
+  3. 需要重新编译 Nginx 模块
+
 ## fail2ban
 
 fail2ban 是一个入侵防御工具，可以保护服务器免受暴力破解攻击。
@@ -98,6 +106,41 @@ certbot --nginx -d new-domain.com
 certbot delete --cert-name example.com
 ```
 
+## ModSecurity
+
+ModSecurity 是一个强大的 Web 应用防火墙(WAF)，可以保护 Web 应用免受各种攻击。
+
+### 功能特点
+- 防御 SQL 注入攻击
+- 防御跨站脚本(XSS)攻击
+- 防御跨站请求伪造(CSRF)
+- 防御文件包含漏洞
+- 防御命令注入
+- 支持 OWASP ModSecurity 核心规则集
+
+### 安装方法
+```bash
+# 基本安装
+ansible-playbook -i inventory/k3s-hosts.yml ansible/install/install-modsecurity.yml
+
+# 指定命名空间安装
+ansible-playbook -i inventory/k3s-hosts.yml ansible/install/install-modsecurity.yml \
+  -e "namespace=your-namespace"
+```
+
+### 验证安装
+```bash
+# 在 Nginx Pod 中执行
+nginx -t  # 检查配置
+curl localhost/index.html?exec=/bin/bash  # 应该被 ModSecurity 阻止
+```
+
+### 查看防护日志
+```bash
+# 在 Nginx Pod 中执行
+tail -f /var/log/nginx/error.log  # ModSecurity 的警告和阻止记录
+```
+
 ## 注意事项
 
 1. fail2ban 安装在主机层面
@@ -138,4 +181,15 @@ ansible-playbook -i inventory/k3s-hosts.yml ansible/install/install-fail2ban.yml
 
 # 然后配置每个命名空间的 Nginx 将日志输出到主机的指定位置
 # 这部分配置已经包含在 Nginx 安装脚本中
+```
+
+### 为多个命名空间配置 ModSecurity
+```bash
+# 为 site1 命名空间配置
+ansible-playbook -i inventory/k3s-hosts.yml ansible/install/install-modsecurity.yml \
+  -e "namespace=site1"
+
+# 为 site2 命名空间配置
+ansible-playbook -i inventory/k3s-hosts.yml ansible/install/install-modsecurity.yml \
+  -e "namespace=site2"
 ``` 
