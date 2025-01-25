@@ -1,0 +1,79 @@
+---
+- name: 卸载 PHP-FPM
+  hosts: all
+  gather_facts: no
+  vars:
+    namespaces:
+      - magento-1
+      - magento-2
+      - magento-3
+  tasks:
+    - name: 显示卸载信息
+      debug:
+        msg: "准备从以下命名空间卸载 PHP-FPM: {{ namespaces | join(', ') }}"
+
+    - name: 卸载每个命名空间中的 PHP-FPM
+      shell: |
+        set -x
+        echo "=== 开始卸载命名空间 {{ item }} 中的 PHP-FPM ==="
+        
+        echo "强制删除 Pod..."
+        PODS=$(kubectl get pods -n {{ item }} -l app=php-fpm -o name)
+        if [ ! -z "$PODS" ]; then
+          kubectl delete $PODS -n {{ item }} --force --grace-period=0 || true
+        fi
+        
+        echo "强制删除 Deployment..."
+        kubectl delete deployment php-fpm -n {{ item }} --force --grace-period=0 || true
+        
+        echo "强制删除 Service..."
+        kubectl delete service php-fpm -n {{ item }} --force --grace-period=0 || true
+        
+        echo "等待资源删除..."
+        for i in {1..6}; do
+          echo "检查剩余资源 (尝试 $i/6)..."
+          
+          PODS=$(kubectl get pods -n {{ item }} -l app=php-fpm -o name)
+          DEPLOYMENTS=$(kubectl get deployment -n {{ item }} -l app=php-fpm -o name)
+          SERVICES=$(kubectl get service -n {{ item }} -l app=php-fpm -o name)
+          
+          if [ -z "$PODS" ] && [ -z "$DEPLOYMENTS" ] && [ -z "$SERVICES" ]; then
+            echo "所有资源已成功删除"
+            break
+          fi
+          
+          if [ ! -z "$PODS" ]; then
+            echo "仍有 Pod 存在:"
+            kubectl get pods -n {{ item }} -l app=php-fpm -o wide
+            kubectl delete $PODS -n {{ item }} --force --grace-period=0 || true
+          fi
+          
+          if [ ! -z "$DEPLOYMENTS" ]; then
+            echo "仍有 Deployment 存在:"
+            kubectl get deployment -n {{ item }} -l app=php-fpm
+            kubectl delete $DEPLOYMENTS -n {{ item }} --force --grace-period=0 || true
+          fi
+          
+          if [ ! -z "$SERVICES" ]; then
+            echo "仍有 Service 存在:"
+            kubectl get service -n {{ item }} -l app=php-fpm
+            kubectl delete $SERVICES -n {{ item }} --force --grace-period=0 || true
+          fi
+          
+          sleep 10
+        done
+        
+        echo "=== 最终检查 ==="
+        echo "Pods:"
+        kubectl get pods -n {{ item }} -l app=php-fpm -o wide
+        echo "Deployments:"
+        kubectl get deployment -n {{ item }} -l app=php-fpm
+        echo "Services:"
+        kubectl get svc -n {{ item }} -l app=php-fpm
+      register: uninstall_result
+      loop: "{{ namespaces }}"
+
+    - name: 显示卸载结果
+      debug:
+        msg: "{{ item.stdout_lines }}"
+      loop: "{{ uninstall_result.results }}" 
