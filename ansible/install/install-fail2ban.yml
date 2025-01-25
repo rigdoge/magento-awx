@@ -34,18 +34,22 @@
         echo "=== 安装依赖 ==="
         
         # 修复包管理器
-        apt-get clean
-        rm -rf /var/lib/apt/lists/*
-        apt-get update
-        apt-get install -f
+        apt-get update || true
+        apt-get install -f || true
         
-        # 安装 Python 依赖
+        # 安装基础 Python
+        apt-get install -y python3 || true
+        
+        # 安装其他依赖
         apt-get install -y \
-          python3 \
           python3-pip \
           python3-setuptools \
           python3-distutils \
-          python3-pkg-resources
+          python3-pkg-resources || true
+        
+        # 再次更新
+        apt-get update
+        apt-get upgrade -y
       register: deps_result
 
     - name: 显示依赖安装结果
