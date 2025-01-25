@@ -3,15 +3,12 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('hawk') }}"
+    use_namespace: "{{ namespace | default('magento-shared') }}"
     use_nodeport: "{{ nodeport | default('30900') }}"
   tasks:
     - name: 创建命名空间
       shell: |
-        if [ "{{ use_namespace }}" != "default" ]; then
-          echo "=== 创建命名空间 {{ use_namespace }} ==="
-          kubectl create namespace {{ use_namespace }} || true
-        fi
+        kubectl create namespace {{ use_namespace }} || true
       register: namespace_result
 
     - name: 创建 PHP-FPM 配置
@@ -35,91 +32,88 @@
                 labels:
                   app: php-fpm
               spec:
+                initContainers:
+                - name: init-php
+                  image: php:8.3-fpm
+                  command: ["/bin/sh", "-c"]
+                  args:
+                    - |
+                      set -ex
+                      # 安装基础依赖
+                      apt-get update
+                      apt-get install -y \
+                        libfreetype6-dev \
+                        libjpeg62-turbo-dev \
+                        libpng-dev \
+                        libicu-dev \
+                        libxml2-dev \
+                        libxslt1-dev \
+                        libzip-dev \
+                        libonig-dev \
+                        libsodium-dev \
+                        libcurl4-openssl-dev
+                      rm -rf /var/lib/apt/lists/*
+                      
+                      # 配置 GD
+                      docker-php-ext-configure gd --with-freetype --with-jpeg
+                      
+                      # 分批安装扩展以便于调试
+                      echo "安装基础扩展..."
+                      docker-php-ext-install -j2 bcmath ctype curl dom
+                      
+                      echo "安装文件处理扩展..."
+                      docker-php-ext-install -j2 fileinfo gd
+                      
+                      echo "安装字符串处理扩展..."
+                      docker-php-ext-install -j2 iconv intl mbstring
+                      
+                      echo "安装数据库扩展..."
+                      docker-php-ext-install -j2 pdo_mysql
+                      
+                      echo "安装 XML 相关扩展..."
+                      docker-php-ext-install -j2 simplexml soap xml xmlwriter xsl
+                      
+                      echo "安装其他扩展..."
+                      docker-php-ext-install -j2 sockets sodium tokenizer zip
+                      
+                      echo "配置 OPcache..."
+                      docker-php-ext-enable opcache
+                      {
+                        echo "opcache.enable=1"
+                        echo "opcache.enable_cli=1"
+                        echo "opcache.memory_consumption=128"
+                        echo "opcache.interned_strings_buffer=8"
+                        echo "opcache.max_accelerated_files=4000"
+                        echo "opcache.revalidate_freq=60"
+                        echo "opcache.fast_shutdown=1"
+                      } > /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
+                      
+                      echo "配置 PHP-FPM..."
+                      {
+                        echo "pm = dynamic"
+                        echo "pm.max_children = 5"
+                        echo "pm.start_servers = 2"
+                        echo "pm.min_spare_servers = 1"
+                        echo "pm.max_spare_servers = 3"
+                      } > /usr/local/etc/php-fpm.d/www.conf
+                      
+                      echo "所有扩展安装完成"
                 containers:
                 - name: php-fpm
                   image: php:8.3-fpm
                   ports:
                   - containerPort: 9000
                     name: fpm
-                  lifecycle:
-                    postStart:
-                      exec:
-                        command:
-                        - /bin/sh
-                        - -c
-                        - |
-                          set -ex
-                          
-                          # 安装基础依赖
-                          apt-get update
-                          apt-get install -y \
-                            libfreetype6-dev \
-                            libjpeg62-turbo-dev \
-                            libpng-dev \
-                            libicu-dev \
-                            libxml2-dev \
-                            libxslt1-dev \
-                            libzip-dev \
-                            libonig-dev \
-                            libsodium-dev \
-                            libcurl4-openssl-dev
-                          rm -rf /var/lib/apt/lists/*
-                          
-                          # 配置 GD
-                          docker-php-ext-configure gd --with-freetype --with-jpeg
-                          
-                          # 安装基础扩展
-                          docker-php-ext-install -j2 bcmath ctype curl dom
-                          
-                          # 安装文件处理扩展
-                          docker-php-ext-install -j2 fileinfo gd
-                          
-                          # 安装字符串处理扩展
-                          docker-php-ext-install -j2 iconv intl mbstring
-                          
-                          # 安装数据库扩展
-                          docker-php-ext-install -j2 pdo_mysql
-                          
-                          # 安装 XML 相关扩展
-                          docker-php-ext-install -j2 simplexml soap xml xmlwriter xsl
-                          
-                          # 安装其他扩展
-                          docker-php-ext-install -j2 sockets sodium tokenizer zip
-                          
-                          # 配置 OPcache
-                          docker-php-ext-enable opcache
-                          {
-                            echo "opcache.enable=1"
-                            echo "opcache.enable_cli=1"
-                            echo "opcache.memory_consumption=128"
-                            echo "opcache.interned_strings_buffer=8"
-                            echo "opcache.max_accelerated_files=4000"
-                            echo "opcache.revalidate_freq=60"
-                            echo "opcache.fast_shutdown=1"
-                          } >> /usr/local/etc/php/conf.d/docker-php-ext-opcache.ini
-                          
-                          # 配置 PHP-FPM
-                          {
-                            echo "pm = dynamic"
-                            echo "pm.max_children = 5"
-                            echo "pm.start_servers = 2"
-                            echo "pm.min_spare_servers = 1"
-                            echo "pm.max_spare_servers = 3"
-                          } >> /usr/local/etc/php-fpm.d/www.conf
                   readinessProbe:
                     tcpSocket:
                       port: 9000
-                    initialDelaySeconds: 180
+                    initialDelaySeconds: 10
                     periodSeconds: 10
-                    timeoutSeconds: 5
-                    failureThreshold: 3
                   livenessProbe:
                     tcpSocket:
                       port: 9000
-                    initialDelaySeconds: 240
+                    initialDelaySeconds: 20
                     periodSeconds: 20
-                    timeoutSeconds: 5
-                    failureThreshold: 3
                   resources:
                     requests:
                       memory: "256Mi"
@@ -147,9 +141,7 @@
 
     - name: 清理旧的部署
       shell: |
-        echo "=== 清理旧的部署 ==="
         kubectl delete -f /tmp/php-fpm.yaml || true
-        echo "等待资源清理完成..."
         sleep 5
       register: cleanup_result
 
@@ -157,26 +149,10 @@
       shell: |
         echo "=== 开始部署 PHP-FPM ==="
         kubectl apply -f /tmp/php-fpm.yaml
-      register: apply_result
-
-    - name: 等待 Pod 创建
-      shell: |
+        
+        echo "等待 Pod 创建..."
         for i in $(seq 1 30); do
           echo "检查 Pod 创建进度... $i/30"
-          if kubectl get pods -n {{ use_namespace }} -l app=php-fpm 2>/dev/null | grep -q php-fpm; then
-            echo "Pod 已创建"
-            exit 0
-          fi
-          sleep 2
-        done
-        echo "错误: Pod 未能成功创建"
-        exit 1
-      register: pod_creation_result
-
-    - name: 等待 Pod 就绪
-      shell: |
-        for i in $(seq 1 120); do
-          echo "检查 Pod 状态... $i/120"
           POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
           if [ -z "$POD_NAME" ]; then
             echo "Pod 名称为空，继续等待..."
@@ -189,13 +165,8 @@
           echo "Pod 状态: $STATUS"
           
           if [ "$STATUS" = "Running" ]; then
-            READY=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.containerStatuses[0].ready}')
-            echo "Pod Ready 状态: $READY"
-            
-            if [ "$READY" = "true" ]; then
-              echo "Pod 已就绪"
-              exit 0
-            fi
+            echo "Pod 已创建并运行"
+            break
           fi
           
           echo "=== Pod 详细状态 ==="
@@ -204,39 +175,23 @@
           echo "=== Pod 事件 ==="
           kubectl get events -n {{ use_namespace }} --field-selector involvedObject.name=$POD_NAME --sort-by='.lastTimestamp'
           
-          echo "=== Pod 详细信息 ==="
-          kubectl describe pod -n {{ use_namespace }} $POD_NAME
+          echo "=== 初始化容器日志 ==="
+          kubectl logs -n {{ use_namespace }} $POD_NAME -c init-php || true
           
-          echo "=== Pod 日志 ==="
-          kubectl logs -n {{ use_namespace }} $POD_NAME --tail=50 --previous || true
-          kubectl logs -n {{ use_namespace }} $POD_NAME --tail=50 || true
+          echo "=== PHP-FPM 容器日志 ==="
+          kubectl logs -n {{ use_namespace }} $POD_NAME || true
           
           sleep 5
         done
-        echo "错误: Pod 未能在预期时间内就绪"
-        exit 1
-      register: pod_ready_result
-
-    - name: 显示部署状态
-      shell: |
+        
         echo -e "\n=== PHP-FPM 部署状态 ==="
         echo "Pod 状态:"
         kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o wide
         
         echo -e "\nService 状态:"
         kubectl get svc -n {{ use_namespace }} -l app=php-fpm
-        
-        echo -e "\n=== 访问地址 ==="
-        NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
-        echo "tcp://$NODE_IP:{{ use_nodeport }}"
-      register: status_result
+      register: deploy_result
 
     - name: 显示部署结果
       debug:
-        msg: 
-          - "{{ namespace_result.stdout_lines | default([]) }}"
-          - "{{ cleanup_result.stdout_lines | default([]) }}"
-          - "{{ apply_result.stdout_lines | default([]) }}"
-          - "{{ pod_creation_result.stdout_lines | default([]) }}"
-          - "{{ pod_ready_result.stdout_lines | default([]) }}"
-          - "{{ status_result.stdout_lines | default([]) }}" 
+        msg: "{{ deploy_result.stdout_lines }}" 
