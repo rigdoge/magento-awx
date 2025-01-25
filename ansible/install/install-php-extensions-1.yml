@@ -67,9 +67,24 @@
         POD_NAME="{{ pod_name.stdout }}"
         echo "=== 更新包管理器 ==="
         
-        # 切换到 root 用户
-        echo "切换到 root 用户..."
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- su root << 'EOF'
+        # 切换到 root 用户并执行命令
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash << 'EOF'
+        set -x  # 启用调试模式
+        
+        # 检查当前用户
+        echo "当前用户:"
+        whoami
+        
+        # 检查 sources.list
+        echo "检查 sources.list:"
+        cat /etc/apt/sources.list || echo "sources.list 不存在"
+        
+        # 创建 sources.list
+        echo "创建 sources.list..."
+        echo "deb http://deb.debian.org/debian bullseye main" > /etc/apt/sources.list
+        echo "deb http://security.debian.org/debian-security bullseye-security main" >> /etc/apt/sources.list
+        echo "deb http://deb.debian.org/debian bullseye-updates main" >> /etc/apt/sources.list
+        
         # 创建必要的目录
         echo "创建必要的目录..."
         mkdir -p /var/lib/apt/lists/partial
@@ -80,7 +95,13 @@
         
         # 更新包管理器
         echo "执行更新..."
-        apt-get update
+        apt-get clean
+        apt-get update -y
+        
+        # 检查更新结果
+        echo "检查可用包..."
+        apt-cache search libicu-dev
+        apt-cache search libzip-dev
         EOF
       register: update_result
 
@@ -93,7 +114,24 @@
         set -x  # 启用调试模式
         POD_NAME="{{ pod_name.stdout }}"
         echo "=== 安装系统依赖 ==="
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- su root -c "apt-get install -y libicu-dev libzip-dev"
+        
+        # 切换到 root 用户并执行命令
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash << 'EOF'
+        set -x  # 启用调试模式
+        
+        # 检查当前用户
+        echo "当前用户:"
+        whoami
+        
+        # 安装依赖
+        echo "安装依赖..."
+        apt-get install -y libicu-dev libzip-dev
+        
+        # 验证安装
+        echo "验证安装..."
+        dpkg -l | grep libicu
+        dpkg -l | grep libzip
+        EOF
       register: deps_result
 
     - name: 显示依赖安装结果
