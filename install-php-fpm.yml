@@ -5,7 +5,7 @@
   vars:
     use_nodeport: "{{ nodeport | default('30900') }}"
 
-  pre_tasks:
+  tasks:
     - name: 验证必要参数
       fail:
         msg: "必须指定 namespace 参数"
