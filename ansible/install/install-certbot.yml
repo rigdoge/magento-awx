@@ -136,22 +136,25 @@
         POD_NAME=$(kubectl get pods -n {{ namespace }} -l app=nginx -o jsonpath='{.items[0].metadata.name}')
         echo "Pod 名称: $POD_NAME"
         
-        # 检查证书文件是否存在
-        echo "检查证书文件..."
-        ls -l /etc/letsencrypt/live/{{ domain }}/
+        # 检查源证书文件
+        echo "检查源证书文件..."
+        ls -la /etc/letsencrypt/live/{{ domain }}/
         
         # 创建临时目录
         echo "创建临时目录..."
         TEMP_DIR=$(mktemp -d)
+        echo "临时目录: $TEMP_DIR"
         
         # 复制证书到临时目录
         echo "复制证书到临时目录..."
-        cp -L /etc/letsencrypt/live/{{ domain }}/*.pem $TEMP_DIR/
+        cp -Lv /etc/letsencrypt/live/{{ domain }}/*.pem $TEMP_DIR/
+        ls -la $TEMP_DIR
         
         # 打包证书
         echo "打包证书..."
         cd $TEMP_DIR
-        tar czf certs.tar.gz *.pem
+        tar czvf certs.tar.gz *.pem
+        ls -la certs.tar.gz
         
         # 创建 Pod 中的目录
         echo "创建证书目录..."
@@ -160,7 +163,8 @@
         # 复制并解压证书
         echo "复制并解压证书..."
         kubectl -n {{ namespace }} cp $TEMP_DIR/certs.tar.gz {{ namespace }}/$POD_NAME:/tmp/
-        kubectl -n {{ namespace }} exec $POD_NAME -- tar xzf /tmp/certs.tar.gz -C /etc/letsencrypt/live/{{ domain }}/
+        kubectl -n {{ namespace }} exec $POD_NAME -- ls -la /tmp/certs.tar.gz
+        kubectl -n {{ namespace }} exec $POD_NAME -- tar xzvf /tmp/certs.tar.gz -C /etc/letsencrypt/live/{{ domain }}/
         kubectl -n {{ namespace }} exec $POD_NAME -- rm /tmp/certs.tar.gz
         
         # 清理临时目录
@@ -169,7 +173,7 @@
         
         # 验证复制结果
         echo "验证证书文件..."
-        kubectl -n {{ namespace }} exec $POD_NAME -- ls -l /etc/letsencrypt/live/{{ domain }}/
+        kubectl -n {{ namespace }} exec $POD_NAME -- ls -la /etc/letsencrypt/live/{{ domain }}/
       register: copy_result
       
     - name: 显示复制结果
