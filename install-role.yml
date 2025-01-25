@@ -10,6 +10,9 @@
       fail:
         msg: "必须指定 role 参数"
       when: role_name == ''
+      
+    - name: 安装所需角色
+      command: "ansible-galaxy install {{ role_name }}"
   
   roles:
     - "{{ role_name }}"
