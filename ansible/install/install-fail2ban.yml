@@ -5,7 +5,7 @@
   become: yes  # 使用 sudo 权限
   
   tasks:
-    - name: 安装 fail2ban
+    - name: 清理旧安装
       shell: |
         set -x
         echo "=== 清理旧安装 ==="
@@ -22,8 +22,16 @@
         apt-get remove -y fail2ban || true
         apt-get purge -y fail2ban || true
         apt-get autoremove -y
-        
-        echo "=== 安装 fail2ban ==="
+      register: clean_result
+
+    - name: 显示清理结果
+      debug:
+        msg: "{{ clean_result.stdout_lines }}"
+
+    - name: 安装依赖
+      shell: |
+        set -x
+        echo "=== 安装依赖 ==="
         
         # 安装 Python 依赖
         apt-get update
@@ -32,9 +40,29 @@
           python3-pip \
           python3-setuptools \
           python3-distutils
+      register: deps_result
+
+    - name: 显示依赖安装结果
+      debug:
+        msg: "{{ deps_result.stdout_lines }}"
+
+    - name: 安装 fail2ban
+      shell: |
+        set -x
+        echo "=== 安装 fail2ban ==="
         
         # 安装 fail2ban
         apt-get install -y fail2ban
+      register: install_result
+
+    - name: 显示安装结果
+      debug:
+        msg: "{{ install_result.stdout_lines }}"
+
+    - name: 配置 fail2ban
+      shell: |
+        set -x
+        echo "=== 配置 fail2ban ==="
         
         # 创建配置文件
         cat > /etc/fail2ban/jail.local << 'EOF'
@@ -66,9 +94,18 @@
         port = http,https
         logpath = /var/log/nginx/error.log
         EOF
+      register: config_result
+
+    - name: 显示配置结果
+      debug:
+        msg: "{{ config_result.stdout_lines }}"
+
+    - name: 启动服务
+      shell: |
+        set -x
+        echo "=== 启动服务 ==="
         
         # 重启服务
-        systemctl stop fail2ban || true
         systemctl daemon-reload
         systemctl enable fail2ban
         systemctl restart fail2ban
@@ -78,8 +115,8 @@
         
         # 检查状态
         systemctl status fail2ban
-      register: install_result
-      
-    - name: 显示安装结果
+      register: start_result
+
+    - name: 显示启动结果
       debug:
-        msg: "{{ install_result.stdout_lines }}" 
+        msg: "{{ start_result.stdout_lines }}" 
