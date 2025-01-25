@@ -39,7 +39,18 @@
                   args:
                     - |
                       set -ex
-                      # 安装基础依赖
+                      echo "开始安装 PHP 扩展..."
+                      
+                      echo "检查系统信息..."
+                      uname -a
+                      df -h
+                      free -h || true
+                      
+                      echo "检查 PHP 信息..."
+                      php -v
+                      php -m
+                      
+                      echo "安装基础依赖..."
                       apt-get update
                       apt-get install -y \
                         libfreetype6-dev \
@@ -54,27 +65,15 @@
                         libcurl4-openssl-dev
                       rm -rf /var/lib/apt/lists/*
                       
-                      # 配置 GD
+                      echo "配置 GD..."
                       docker-php-ext-configure gd --with-freetype --with-jpeg
                       
-                      # 分批安装扩展以便于调试
-                      echo "安装基础扩展..."
-                      docker-php-ext-install -j2 bcmath ctype curl dom
-                      
-                      echo "安装文件处理扩展..."
-                      docker-php-ext-install -j2 fileinfo gd
-                      
-                      echo "安装字符串处理扩展..."
-                      docker-php-ext-install -j2 iconv intl mbstring
-                      
-                      echo "安装数据库扩展..."
-                      docker-php-ext-install -j2 pdo_mysql
-                      
-                      echo "安装 XML 相关扩展..."
-                      docker-php-ext-install -j2 simplexml soap xml xmlwriter xsl
-                      
-                      echo "安装其他扩展..."
-                      docker-php-ext-install -j2 sockets sodium tokenizer zip
+                      echo "分批安装扩展..."
+                      for ext in bcmath ctype curl dom fileinfo gd iconv intl mbstring pdo_mysql simplexml soap xml xmlwriter xsl sockets sodium tokenizer zip; do
+                        echo "安装扩展: $ext"
+                        docker-php-ext-install -j$(nproc) $ext
+                        echo "扩展 $ext 安装完成"
+                      done
                       
                       echo "配置 OPcache..."
                       docker-php-ext-enable opcache
@@ -97,7 +96,18 @@
                         echo "pm.max_spare_servers = 3"
                       } > /usr/local/etc/php-fpm.d/www.conf
                       
+                      echo "检查最终 PHP 配置..."
+                      php -v
+                      php -m
+                      
                       echo "所有扩展安装完成"
+                  resources:
+                    requests:
+                      memory: "512Mi"
+                      cpu: "500m"
+                    limits:
+                      memory: "1Gi"
+                      cpu: "1000m"
                 containers:
                 - name: php-fpm
                   image: php:8.3-fpm
@@ -170,10 +180,13 @@
           fi
           
           echo "=== Pod 详细状态 ==="
-          kubectl get pod -n {{ use_namespace }} $POD_NAME -o yaml | grep -A 10 "status:"
+          kubectl get pod -n {{ use_namespace }} $POD_NAME -o yaml
           
           echo "=== Pod 事件 ==="
           kubectl get events -n {{ use_namespace }} --field-selector involvedObject.name=$POD_NAME --sort-by='.lastTimestamp'
+          
+          echo "=== 节点资源使用情况 ==="
+          kubectl describe node
           
           echo "=== 初始化容器日志 ==="
           kubectl logs -n {{ use_namespace }} $POD_NAME -c init-php || true
@@ -181,7 +194,7 @@
           echo "=== PHP-FPM 容器日志 ==="
           kubectl logs -n {{ use_namespace }} $POD_NAME || true
           
-          sleep 5
+          sleep 10
         done
         
         echo -e "\n=== PHP-FPM 部署状态 ==="
