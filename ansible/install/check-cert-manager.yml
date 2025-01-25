@@ -1,40 +1,35 @@
 ---
 - name: 检查 cert-manager 状态
   hosts: all
-  gather_facts: yes
+  gather_facts: no
   tasks:
-    - name: 检查 cert-manager pods 状态
+    - name: 检查证书状态
       shell: |
-        kubectl get pods -n cert-manager -o wide
-      register: cert_manager_pods
-      
-    - name: 显示 cert-manager pods 状态
-      debug:
-        msg: "{{ cert_manager_pods.stdout_lines }}"
-
-    - name: 检查 ClusterIssuer 状态
-      shell: |
-        kubectl get clusterissuer letsencrypt-prod -o wide
-      register: cluster_issuer
-      
-    - name: 显示 ClusterIssuer 状态
-      debug:
-        msg: "{{ cluster_issuer.stdout_lines }}"
-
-    - name: 检查 AWX 证书状态
-      shell: |
+        echo "=== 检查 cert-manager Pod 状态 ==="
+        kubectl get pods -n cert-manager
+        
+        echo -e "\n=== 检查 ClusterIssuer 状态 ==="
+        kubectl get clusterissuer letsencrypt-prod -o yaml
+        
+        echo -e "\n=== 检查证书状态 ==="
         kubectl get certificate -n awx
-      register: awx_cert
-      
-    - name: 显示 AWX 证书状态
-      debug:
-        msg: "{{ awx_cert.stdout_lines }}"
-
-    - name: 检查 AWX Ingress 配置
-      shell: |
+        
+        echo -e "\n=== 检查证书详细信息 ==="
+        kubectl describe certificate awx-tls -n awx
+        
+        echo -e "\n=== 检查 CertificateRequest ==="
+        kubectl get certificaterequest -n awx
+        
+        echo -e "\n=== 检查 Order 状态 ==="
+        kubectl get order -n awx
+        
+        echo -e "\n=== 检查 Challenge 状态 ==="
+        kubectl get challenge -n awx
+        
+        echo -e "\n=== 检查 Ingress 配置 ==="
         kubectl get ingress -n awx
-      register: awx_ingress
-      
-    - name: 显示 AWX Ingress 状态
+      register: cert_status
+
+    - name: 显示检查结果
       debug:
-        msg: "{{ awx_ingress.stdout_lines }}" 
+        var: cert_status.stdout_lines 
