@@ -1,5 +1,34 @@
 ---
 # Magento 环境配置
+install_groups:
+  - name: base
+    title: 基础环境
+    components:
+      - nginx
+      - php83
+      - php82
+      - percona
+      
+  - name: cache
+    title: 缓存层
+    components:
+      - redis
+      - varnish
+      
+  - name: services
+    title: 搜索和消息队列
+    components:
+      - opensearch
+      - rabbitmq
+      
+  - name: tools
+    title: 工具和安全
+    components:
+      - composer
+      - phpmyadmin
+      - fail2ban
+      - certbot
+
 environments:
   - name: composer
     role: geerlingguy.composer

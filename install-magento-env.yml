@@ -3,6 +3,7 @@
   hosts: all
   vars:
     component: "{{ component | default('') }}"  # 要安装的组件名称
+    group: "{{ group | default('') }}"  # 要安装的组名称
     namespace: "{{ namespace | default('magento-shared') }}"
     
   pre_tasks:
@@ -10,30 +11,40 @@
       include_vars:
         file: magento-env.yml
         
-    - name: 验证组件名称
+    - name: 验证参数
       fail:
-        msg: "必须指定 component 参数，可选值: {{ environments | map(attribute='name') | list | join(', ') }}"
-      when: component == ''
+        msg: "必须指定 component 或 group 参数。可选组: {{ install_groups | map(attribute='name') | list | join(', ') }}，可选组件: {{ environments | map(attribute='name') | list | join(', ') }}"
+      when: component == '' and group == ''
+      
+    - name: 查找组配置
+      set_fact:
+        selected_group: "{{ install_groups | selectattr('name', 'equalto', group) | list | first }}"
+      when: group != ''
       
     - name: 查找组件配置
       set_fact:
         selected_component: "{{ environments | selectattr('name', 'equalto', component) | list | first }}"
       when: component != ''
       
-  roles:
-    - role: "{{ selected_component.role }}"
-      vars:
-        # 通用版本变量
-        nginx_version: "{{ selected_component.version | default('latest') if selected_component.name == 'nginx' }}"
-        php_version: "{{ selected_component.version | default('latest') if selected_component.name.startswith('php') }}"
-        mysql_version: "{{ selected_component.version | default('latest') if selected_component.name == 'percona' }}"
-        redis_version: "{{ selected_component.version | default('latest') if selected_component.name == 'redis' }}"
-        rabbitmq_version: "{{ selected_component.version | default('latest') if selected_component.name == 'rabbitmq' }}"
-        varnish_version: "{{ selected_component.version | default('latest') if selected_component.name == 'varnish' }}"
-        elasticsearch_version: "{{ selected_component.version | default('latest') if selected_component.name == 'opensearch' }}"
-        composer_version: "{{ selected_component.version | default('latest') if selected_component.name == 'composer' }}"
+    - name: 显示安装计划
+      debug:
+        msg: "{{ '准备安装组: ' + selected_group.title if group != '' else '准备安装组件: ' + component }}"
         
+  tasks:
+    - name: 安装组内所有组件
+      include_tasks: install-component.yml
+      vars:
+        component_name: "{{ item }}"
+      loop: "{{ selected_group.components }}"
+      when: group != ''
+      
+    - name: 安装单个组件
+      include_tasks: install-component.yml
+      vars:
+        component_name: "{{ component }}"
+      when: component != ''
+      
   post_tasks:
     - name: 显示安装完成
       debug:
-        msg: "组件 {{ component }}({{ selected_component.role }}) 安装完成，版本: {{ selected_component.version | default('latest') }}" 
+        msg: "{{ '组 ' + selected_group.title if group != '' else '组件 ' + component }} 安装完成" 
