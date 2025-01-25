@@ -138,7 +138,8 @@
             
             # 用于 Let's Encrypt 验证
             location /.well-known/acme-challenge/ {
-                root {{ webroot_path }};
+                alias /var/www/certbot/.well-known/acme-challenge/;
+                try_files $uri =404;
                 autoindex on;
                 allow all;
             }
@@ -153,6 +154,36 @@
 
     - name: 复制 nginx 配置到 pod
       shell: kubectl -n {{ namespace }} cp /tmp/certbot-location.conf {{ nginx_pod.stdout }}:/etc/nginx/conf.d/default.conf
+
+    - name: 创建完整的验证目录结构
+      shell: |
+        set -x
+        echo "=== 创建验证目录结构 ==="
+        
+        # 在主机上创建完整路径
+        mkdir -p {{ webroot_path }}/.well-known/acme-challenge
+        chmod -R 755 {{ webroot_path }}
+        
+        # 创建测试文件
+        echo "test123" > {{ webroot_path }}/.well-known/acme-challenge/test.txt
+        chmod 644 {{ webroot_path }}/.well-known/acme-challenge/test.txt
+        
+        # 检查目录结构
+        echo "主机上的目录结构："
+        ls -R {{ webroot_path }}
+        
+        # 检查 Pod 中的目录结构
+        echo "Pod 中的目录结构："
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ls -R {{ webroot_path }}
+        
+        # 测试访问
+        echo "测试访问："
+        curl -v http://{{ domain_name }}/.well-known/acme-challenge/test.txt
+      register: dir_result
+      
+    - name: 显示目录创建结果
+      debug:
+        msg: "{{ dir_result.stdout_lines }}"
 
     - name: 确保 webroot 目录权限正确
       shell: |
