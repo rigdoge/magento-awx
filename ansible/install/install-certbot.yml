@@ -78,6 +78,43 @@
         mode: '0755'
       become: true
 
+    - name: 修改 nginx deployment 以使用 hostPath
+      shell: |
+        set -x
+        echo "=== 修改 Nginx Deployment ==="
+        
+        # 获取当前配置
+        kubectl -n {{ namespace }} get deployment nginx -o yaml > /tmp/nginx-deploy.yaml
+        
+        # 添加 hostPath 卷
+        cat > /tmp/nginx-deploy-patch.yaml << EOF
+        spec:
+          template:
+            spec:
+              volumes:
+              - name: webroot
+                hostPath:
+                  path: {{ webroot_path }}
+                  type: Directory
+              containers:
+              - name: nginx
+                volumeMounts:
+                - name: webroot
+                  mountPath: {{ webroot_path }}
+        EOF
+        
+        # 应用修改
+        kubectl -n {{ namespace }} patch deployment nginx --patch-file /tmp/nginx-deploy-patch.yaml
+        
+        # 等待 Pod 重启
+        echo "等待 Pod 重启..."
+        sleep 10
+      register: patch_result
+      
+    - name: 显示修改结果
+      debug:
+        msg: "{{ patch_result.stdout_lines }}"
+
     - name: 获取 nginx pod 名称
       shell: kubectl -n {{ namespace }} get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}'
       register: nginx_pod
