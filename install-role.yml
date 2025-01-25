@@ -1,0 +1,20 @@
+---
+- name: 通用角色安装
+  hosts: all
+  vars:
+    role_name: "{{ role | default('') }}"  # 在 AWX 中设置
+    namespace: "{{ namespace | default('default') }}"
+  
+  pre_tasks:
+    - name: 验证必要参数
+      fail:
+        msg: "必须指定 role 参数"
+      when: role_name == ''
+  
+  roles:
+    - "{{ role_name }}"
+  
+  post_tasks:
+    - name: 显示安装结果
+      debug:
+        msg: "角色 {{ role_name }} 安装完成" 
