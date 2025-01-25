@@ -70,7 +70,7 @@
 
             # 代理设置
             location / {
-                proxy_pass http://localhost:8052;  # AWX 服务端口
+                proxy_pass http://awx-web-svc:8052;  # 使用 Kubernetes 服务名
                 proxy_http_version 1.1;
                 proxy_set_header Upgrade $http_upgrade;
                 proxy_set_header Connection "upgrade";
