@@ -244,6 +244,21 @@
 
     - name: 申请证书
       shell: |
+        set -x
+        echo "=== 申请证书 ==="
+        
+        # 显示 certbot 版本
+        certbot --version
+        
+        # 检查 webroot 目录
+        echo "Webroot 目录内容："
+        ls -la {{ webroot_path }}/.well-known/acme-challenge/
+        
+        # 检查 certbot 日志
+        echo "之前的 certbot 日志："
+        tail -n 50 /var/log/letsencrypt/letsencrypt.log || true
+        
+        # 申请证书
         certbot certonly \
           --webroot \
           -w {{ webroot_path }} \
@@ -254,6 +269,10 @@
           --debug-challenges \
           -v \
           {% if use_staging %}--staging{% endif %}
+        
+        # 显示详细日志
+        echo "最新的 certbot 日志："
+        tail -n 50 /var/log/letsencrypt/letsencrypt.log
       register: cert_result
       
     - name: 显示证书申请结果
