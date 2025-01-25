@@ -7,29 +7,32 @@
     use_nodeport: "{{ nodeport | default('30900') }}"
 
   tasks:
+    - name: 验证命名空间是否存在
+      shell: |
+        /usr/local/bin/k3s kubectl get namespace {{ use_namespace }} &>/dev/null
+      register: namespace_exists
+      ignore_errors: true
+
     - name: 创建命名空间
       shell: |
-        if [ "{{ use_namespace }}" != "default" ]; then
-          echo "=== 创建命名空间 {{ use_namespace }} ==="
-          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
-          
-          echo "等待命名空间就绪..."
-          for i in $(seq 1 10); do
-            if /usr/local/bin/k3s kubectl get namespace {{ use_namespace }} &>/dev/null; then
-              echo "命名空间 {{ use_namespace }} 已就绪"
-              break
-            fi
-            echo "等待命名空间... $i/10"
-            sleep 2
-          done
-        fi
-      register: namespace_result
+        /usr/local/bin/k3s kubectl create namespace {{ use_namespace }}
+      when: namespace_exists.rc != 0
+      register: namespace_created
 
-    - name: 验证命名空间状态
+    - name: 等待命名空间就绪
       shell: |
-        echo "=== 验证命名空间 {{ use_namespace }} ==="
-        /usr/local/bin/k3s kubectl get namespace {{ use_namespace }}
-      register: verify_namespace
+        for i in $(seq 1 30); do
+          if /usr/local/bin/k3s kubectl get namespace {{ use_namespace }} &>/dev/null; then
+            echo "命名空间 {{ use_namespace }} 已就绪"
+            exit 0
+          fi
+          echo "等待命名空间... $i/30"
+          sleep 2
+        done
+        echo "错误: 命名空间未能在预期时间内就绪"
+        exit 1
+      when: namespace_created is changed
+      register: namespace_ready
       
     - name: 创建 PHP-FPM 配置
       copy:
@@ -118,15 +121,17 @@
                   readinessProbe:
                     tcpSocket:
                       port: 9000
-                    initialDelaySeconds: 30
+                    initialDelaySeconds: 180  # 增加延迟时间
                     periodSeconds: 10
-                    timeoutSeconds: 5
+                    timeoutSeconds: 10
+                    failureThreshold: 3
                   livenessProbe:
                     tcpSocket:
                       port: 9000
-                    initialDelaySeconds: 60
+                    initialDelaySeconds: 240  # 增加延迟时间
                     periodSeconds: 20
-                    timeoutSeconds: 5
+                    timeoutSeconds: 10
+                    failureThreshold: 3
                   resources:
                     requests:
                       memory: "512Mi"
@@ -157,7 +162,7 @@
         echo "=== 清理旧的部署 ==="
         /usr/local/bin/k3s kubectl delete -f /tmp/php-fpm.yaml || true
         echo "等待资源清理完成..."
-        sleep 5
+        sleep 10  # 增加等待时间
       register: cleanup_result
 
     - name: 应用 PHP-FPM 配置
@@ -168,8 +173,8 @@
 
     - name: 等待 Pod 创建
       shell: |
-        for i in $(seq 1 30); do
-          echo "检查 Pod 创建进度... $i/30"
+        for i in $(seq 1 60); do  # 增加等待时间
+          echo "检查 Pod 创建进度... $i/60"
           if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm 2>/dev/null | grep -q php-fpm; then
             echo "Pod 已创建"
             exit 0
@@ -182,8 +187,8 @@
 
     - name: 等待 Pod 就绪
       shell: |
-        for i in $(seq 1 60); do
-          echo "检查 Pod 状态... $i/60"
+        for i in $(seq 1 120); do  # 增加等待时间
+          echo "检查 Pod 状态... $i/120"
           STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.phase}')
           if [ "$STATUS" = "Running" ]; then
             READY=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
@@ -192,8 +197,10 @@
               exit 0
             fi
           fi
-          echo "当前状态: $STATUS"
-          /usr/local/bin/k3s kubectl describe pods -n {{ use_namespace }} -l app=php-fpm
+          if [ "$((i % 10))" = "0" ]; then  # 每 10 次循环显示一次详细信息
+            echo "当前状态: $STATUS"
+            /usr/local/bin/k3s kubectl describe pods -n {{ use_namespace }} -l app=php-fpm
+          fi
           sleep 2
         done
         echo "错误: Pod 未能在预期时间内就绪"
@@ -217,7 +224,7 @@
     - name: 显示部署结果
       debug:
         msg: 
-          - "{{ namespace_result.stdout_lines | default([]) }}"
+          - "{{ namespace_ready.stdout_lines | default([]) }}"
           - "{{ apply_result.stdout_lines | default([]) }}"
           - "{{ pod_creation_result.stdout_lines | default([]) }}"
           - "{{ pod_ready_result.stdout_lines | default([]) }}"
