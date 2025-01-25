@@ -182,43 +182,41 @@
         echo "=== 创建验证目录结构 ==="
         
         # 在主机上创建完整路径
-        mkdir -p {{ webroot_path }}/.well-known/acme-challenge
+        echo "创建主机目录..."
+        mkdir -p {{ webroot_path }}/.well-known/acme-challenge || true
         chmod -R 755 {{ webroot_path }}
         
         # 在 Pod 中创建完整路径
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- mkdir -p {{ webroot_path }}/.well-known/acme-challenge
+        echo "创建 Pod 目录..."
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- mkdir -p {{ webroot_path }}/.well-known/acme-challenge || true
         kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- chmod -R 755 {{ webroot_path }}
         
-        # 创建测试文件
-        echo "test123" > {{ webroot_path }}/.well-known/acme-challenge/test.txt
-        chmod 644 {{ webroot_path }}/.well-known/acme-challenge/test.txt
-        
-        # 复制测试文件到 Pod
-        kubectl -n {{ namespace }} cp {{ webroot_path }}/.well-known/acme-challenge/test.txt {{ namespace }}/{{ nginx_pod.stdout }}:{{ webroot_path }}/.well-known/acme-challenge/test.txt
+        # 创建并复制测试文件
+        echo "创建测试文件..."
+        echo "test123" > /tmp/test.txt
+        kubectl -n {{ namespace }} cp /tmp/test.txt {{ namespace }}/{{ nginx_pod.stdout }}:{{ webroot_path }}/.well-known/acme-challenge/test.txt
         
         # 检查目录结构和权限
-        echo "主机上的目录结构和权限："
-        ls -la {{ webroot_path }}/.well-known/acme-challenge/
+        echo "检查主机目录..."
+        ls -la {{ webroot_path }}/.well-known/acme-challenge/ || true
         
-        echo "Pod 中的目录结构和权限："
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ls -la {{ webroot_path }}/.well-known/acme-challenge/
+        echo "检查 Pod 目录..."
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ls -la {{ webroot_path }}/.well-known/acme-challenge/ || true
         
         # 检查 Nginx 用户
-        echo "Nginx 用户信息："
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ps aux | grep nginx
+        echo "检查 Nginx 进程..."
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- ps aux | grep nginx || true
         
         # 测试访问
-        echo "测试访问："
-        curl -v http://{{ domain_name }}/.well-known/acme-challenge/test.txt
+        echo "测试访问..."
+        curl -m 5 -v http://{{ domain_name }}/.well-known/acme-challenge/test.txt || true
         
         # 检查 Nginx 日志
-        echo "Nginx 错误日志："
-        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- tail -n 20 /var/log/nginx/error.log
+        echo "检查 Nginx 日志..."
+        kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- tail -n 20 /var/log/nginx/error.log || true
       register: dir_result
-      
-    - name: 显示目录创建结果
-      debug:
-        msg: "{{ dir_result.stdout_lines }}"
+      async: 300  # 5分钟超时
+      poll: 5     # 每5秒检查一次
 
     - name: 确保 webroot 目录权限正确
       shell: |
