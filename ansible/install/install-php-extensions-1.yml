@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('default') }}"
+    use_namespace: "{{ namespace | default('magento-shared') }}"
 
   tasks:
     - name: 获取 PHP-FPM Pod 名称
