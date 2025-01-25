@@ -1,5 +1,5 @@
 ---
-- name: 安装 Certbot
+- name: 申请和管理 SSL 证书
   hosts: all
   gather_facts: no
   become: yes
@@ -11,6 +11,16 @@
     webroot_path: "/var/www/certbot"
   
   tasks:
+    - name: 检查 certbot 是否已安装
+      shell: |
+        set -x
+        if ! command -v certbot &> /dev/null; then
+          echo "请先运行 install-certbot.yml 安装 certbot"
+          exit 1
+        fi
+        certbot --version
+      register: certbot_check
+
     - name: 获取 Nginx Pod 名称
       shell: |
         set -x

@@ -1,0 +1,69 @@
+---
+- name: 安装 Certbot（基础安装）
+  hosts: all
+  gather_facts: no
+  become: yes
+  
+  tasks:
+    - name: 安装依赖
+      shell: |
+        set -x
+        echo "=== 安装依赖 ==="
+        
+        # 更新包管理器
+        apt-get update
+        
+        # 安装依赖
+        apt-get install -y \
+          python3-pip \
+          python3-venv \
+          snapd
+        
+        # 确保 snap 正常运行
+        systemctl start snapd
+        systemctl enable snapd
+      register: deps_result
+      
+    - name: 显示依赖安装结果
+      debug:
+        msg: "{{ deps_result.stdout_lines }}"
+
+    - name: 安装 certbot
+      shell: |
+        set -x
+        echo "=== 安装 certbot ==="
+        
+        # 删除可能存在的旧版本
+        apt-get remove -y certbot || true
+        rm -f /usr/bin/certbot
+        
+        # 安装最新版本
+        snap install --classic certbot
+        
+        # 创建软链接
+        ln -sf /snap/bin/certbot /usr/bin/certbot
+        
+        # 验证安装
+        echo "验证 certbot 安装："
+        which certbot
+        certbot --version
+      register: install_result
+      
+    - name: 显示安装结果
+      debug:
+        msg: "{{ install_result.stdout_lines }}"
+
+    - name: 确认 certbot 可用
+      shell: |
+        set -x
+        echo "=== 确认 certbot 可用 ==="
+        
+        # 检查命令是否存在
+        if ! command -v certbot &> /dev/null; then
+          echo "certbot 命令不可用！"
+          exit 1
+        fi
+        
+        # 显示版本信息
+        certbot --version
+      register: certbot_check 
