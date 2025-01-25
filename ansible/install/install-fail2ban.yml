@@ -37,8 +37,11 @@
         apt-get update || true
         apt-get install -f || true
         
-        # 安装基础 Python
-        apt-get install -y python3 || true
+        # 安装 Python 3.11 (包含 asynchat 模块)
+        apt-get install -y python3.11 python3.11-dev || true
+        
+        # 设置 Python 3.11 为默认版本
+        update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
         
         # 安装其他依赖
         apt-get install -y \
