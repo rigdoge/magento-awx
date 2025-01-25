@@ -44,12 +44,14 @@
     - name: 安装 Composer
       shell: |
         set -x  # 启用调试模式
+        set -e  # 遇到错误就退出
         POD_NAME="{{ pod_name.stdout }}"
         echo "=== 安装 Composer ==="
         
         # 切换到 root 用户并执行命令
         kubectl exec -n {{ use_namespace }} $POD_NAME -- bash << 'EOF'
         set -x  # 启用调试模式
+        set -e  # 遇到错误就退出
         
         # 检查当前用户
         echo "当前用户:"
@@ -57,17 +59,35 @@
         
         # 安装依赖
         echo "安装依赖..."
-        apt-get update && apt-get install -y \
+        apt-get update
+        apt-get install -y \
           unzip \
-          git
+          git \
+          curl \
+          ca-certificates
         
         # 下载 Composer 安装脚本
         echo "下载 Composer 安装脚本..."
         curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php
         
+        # 验证下载是否成功
+        if [ ! -f /tmp/composer-setup.php ]; then
+          echo "下载 Composer 安装脚本失败"
+          exit 1
+        fi
+        
         # 安装指定版本的 Composer
         echo "安装 Composer 2.7..."
         php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer --version=2.7.1
+        
+        # 验证 composer 文件是否存在
+        if [ ! -f /usr/local/bin/composer ]; then
+          echo "Composer 安装失败"
+          exit 1
+        fi
+        
+        # 设置执行权限
+        chmod +x /usr/local/bin/composer
         
         # 清理安装文件
         rm -f /tmp/composer-setup.php
