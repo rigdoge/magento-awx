@@ -11,12 +11,18 @@
         msg: "必须指定 role 参数"
       when: role_name == ''
       
-    - name: 确保 ansible-galaxy 可用
+    - name: 确保 pip 可用
       shell: |
-        if ! command -v ansible-galaxy &> /dev/null; then
+        if ! command -v pip3 &> /dev/null; then
           apt-get update
-          apt-get install -y ansible
+          apt-get install -y python3-pip
         fi
+      become: yes
+      
+    - name: 安装 ansible
+      pip:
+        name: ansible
+        state: present
       become: yes
       
     - name: 安装所需角色
