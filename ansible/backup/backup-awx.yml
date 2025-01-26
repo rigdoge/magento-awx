@@ -40,10 +40,10 @@
       register: cred_result
 
     - name: 压缩备份文件
-      archive:
-        path: "{{ backup_dir }}/{{ timestamp }}"
-        dest: "{{ backup_dir }}/awx-backup-{{ timestamp }}.tar.gz"
-        format: gz
+      shell: |
+        cd {{ backup_dir }} && tar -czf awx-backup-{{ timestamp }}.tar.gz {{ timestamp }}
+      args:
+        warn: false
 
     - name: 清理临时文件
       file:
