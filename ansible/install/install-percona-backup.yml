@@ -13,6 +13,12 @@
     mysql_root_password: "{{ lookup('env', 'MYSQL_ROOT_PASSWORD') | default('magento123') }}"
     
   tasks:
+    - name: 显示变量
+      debug:
+        msg: 
+          - "命名空间: {{ use_namespace }}"
+          - "使用的密码: {{ mysql_root_password }}"
+
     - name: 创建临时 Secret 文件
       copy:
         dest: "/tmp/secret.yaml"
@@ -24,7 +30,7 @@
             namespace: {{ use_namespace }}
           type: Opaque
           stringData:
-            root-password: {{ mysql_root_password }}
+            root-password: "{{ mysql_root_password }}"
 
     - name: 应用 Secret
       command: "{{ k3s_bin }} kubectl apply -f /tmp/secret.yaml"
@@ -33,6 +39,14 @@
     - name: 显示 Secret 创建结果
       debug:
         var: secret_result.stdout_lines
+
+    - name: 验证 Secret
+      command: "{{ k3s_bin }} kubectl get secret percona -n {{ use_namespace }} -o yaml"
+      register: secret_check
+
+    - name: 显示 Secret 详情
+      debug:
+        var: secret_check.stdout_lines
 
     - name: 创建临时 PVC 文件
       copy:
