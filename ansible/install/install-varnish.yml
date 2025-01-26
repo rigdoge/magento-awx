@@ -5,9 +5,9 @@
   vars:
     use_namespace: "{{ namespace | default('default') }}"
     use_nodeport: "{{ nodeport | default('30180') }}"
-    backend_host: "{{ backend | default('nginx') }}"
-    backend_port: "{{ backend_port | default('80') }}"
-    varnish_memory: "{{ memory | default('1G') }}"
+    use_backend_host: "{{ backend | default('nginx') }}"
+    use_backend_port: "{{ backend_port | default('80') }}"
+    use_memory: "{{ memory | default('1G') }}"
   tasks:
     - name: 创建命名空间
       shell: |
@@ -25,8 +25,8 @@
           
           # 默认后端配置
           backend default {
-              .host = "{{ backend_host }}";
-              .port = "{{ backend_port }}";
+              .host = "{{ use_backend_host }}";
+              .port = "{{ use_backend_port }}";
               .probe = {
                   .url = "/health_check.php";
                   .timeout = 2s;
@@ -138,7 +138,7 @@
                     - "-f"
                     - "/etc/varnish/default.vcl"
                     - "-s"
-                    - "malloc,{{ varnish_memory }}"
+                    - "malloc,{{ use_memory }}"
                     - "-p"
                     - "default_ttl=3600"
                   ports:
