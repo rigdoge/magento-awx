@@ -58,7 +58,17 @@
         helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
         helm repo update
 
-    - name: 安装 Nginx Ingress Controller
+    - name: 检查 Prometheus CRDs 是否已安装
+      shell: |
+        if kubectl get crd servicemonitors.monitoring.coreos.com > /dev/null 2>&1; then
+          echo "found"
+        else
+          echo "not found"
+        fi
+      register: prometheus_check
+      changed_when: false
+
+    - name: 安装 Nginx Ingress Controller（带监控）
       shell: |
         helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
           --namespace {{ ingress_nginx_namespace }} \
@@ -69,6 +79,17 @@
           --set controller.metrics.serviceMonitor.enabled=true \
           --set controller.metrics.serviceMonitor.additionalLabels.release=prometheus \
           --wait
+      when: prometheus_check.stdout == "found"
+
+    - name: 安装 Nginx Ingress Controller（不带监控）
+      shell: |
+        helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+          --namespace {{ ingress_nginx_namespace }} \
+          --set controller.service.type=NodePort \
+          --set controller.service.nodePorts.http=30080 \
+          --set controller.service.nodePorts.https=30443 \
+          --wait
+      when: prometheus_check.stdout == "not found"
 
     - name: 等待 Nginx Ingress Controller 就绪
       shell: |
@@ -91,7 +112,17 @@
       shell: |
         kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.crds.yaml
 
-    - name: 安装 cert-manager
+    - name: 检查 Prometheus CRDs 是否已安装（用于 cert-manager 监控）
+      shell: |
+        if kubectl get crd servicemonitors.monitoring.coreos.com > /dev/null 2>&1; then
+          echo "found"
+        else
+          echo "not found"
+        fi
+      register: prometheus_check_cert_manager
+      changed_when: false
+
+    - name: 安装 cert-manager（带监控）
       shell: |
         helm upgrade --install \
           cert-manager jetstack/cert-manager \
@@ -102,6 +133,17 @@
           --set prometheus.servicemonitor.enabled=true \
           --set prometheus.servicemonitor.labels.release=prometheus \
           --wait
+      when: prometheus_check_cert_manager.stdout == "found"
+
+    - name: 安装 cert-manager（不带监控）
+      shell: |
+        helm upgrade --install \
+          cert-manager jetstack/cert-manager \
+          --namespace {{ cert_manager_namespace }} \
+          --version {{ cert_manager_version }} \
+          --set installCRDs=false \
+          --wait
+      when: prometheus_check_cert_manager.stdout == "not found"
 
     - name: 等待 cert-manager 就绪
       shell: |
@@ -227,4 +269,5 @@
               annotations:
                 summary: Certificate not ready
                 description: "Certificate {{ "{{" }} $labels.name {{ "}}" }} in namespace {{ "{{" }} $labels.exported_namespace {{ "}}" }} is not ready"
-        EOF 
+        EOF
+      when: prometheus_check_cert_manager.stdout == "found" 
