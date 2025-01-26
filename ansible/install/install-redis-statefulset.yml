@@ -155,54 +155,82 @@
         /usr/local/bin/k3s kubectl apply -f /tmp/redis-config.yaml -f /tmp/redis-statefulset.yaml
       register: apply_result
 
-    - name: 等待 Pod 创建完成
+    - name: 检查 StatefulSet 状态
       shell: |
-        echo "=== 等待 Pod 创建完成 ==="
-        
-        # 检查 StatefulSet 状态
-        echo "检查 StatefulSet 状态:"
+        echo "=== 检查 StatefulSet 状态 ==="
         /usr/local/bin/k3s kubectl get statefulset -n {{ use_namespace }}
-        
-        # 检查 PVC 状态
-        echo "检查 PVC 状态:"
+      register: statefulset_status
+
+    - name: 显示 StatefulSet 状态
+      debug:
+        var: statefulset_status.stdout_lines
+
+    - name: 检查 PVC 状态
+      shell: |
+        echo "=== 检查 PVC 状态 ==="
         /usr/local/bin/k3s kubectl get pvc -n {{ use_namespace }}
-        
-        # 等待 Pod 创建
+      register: pvc_status
+
+    - name: 显示 PVC 状态
+      debug:
+        var: pvc_status.stdout_lines
+
+    - name: 等待 Pod 创建
+      shell: |
+        echo "=== 等待 Pod 创建 ==="
         for i in $(seq 1 30); do
-          echo "第 $i 次尝试获取 Pod..."
-          /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis
-          
           POD_NAME=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].metadata.name}')
           if [ ! -z "$POD_NAME" ]; then
-            break
+            echo "$POD_NAME"
+            exit 0
           fi
           sleep 5
         done
-        
-        if [ -z "$POD_NAME" ]; then
-          echo "错误: Pod 未能创建"
-          echo "检查 Events:"
-          /usr/local/bin/k3s kubectl get events -n {{ use_namespace }}
-          exit 1
-        fi
-        
-        # 检查 Pod 状态
-        echo "Pod 已创建: $POD_NAME"
+        echo ""
+      register: pod_name
+
+    - name: 检查 Pod 是否创建
+      fail:
+        msg: "Pod 未能创建"
+      when: pod_name.stdout == ""
+
+    - name: 检查 Pod 状态
+      shell: |
+        POD_NAME="{{ pod_name.stdout }}"
+        echo "=== 检查 Pod 状态: $POD_NAME ==="
         /usr/local/bin/k3s kubectl get pod $POD_NAME -n {{ use_namespace }} -o wide
         /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} $POD_NAME
-        
-        # 检查 Pod 日志
-        echo "Pod 日志:"
+      register: pod_status
+      when: pod_name.stdout != ""
+
+    - name: 显示 Pod 状态
+      debug:
+        var: pod_status.stdout_lines
+      when: pod_name.stdout != ""
+
+    - name: 检查 Pod 日志
+      shell: |
+        POD_NAME="{{ pod_name.stdout }}"
+        echo "=== 检查 Pod 日志 ==="
         /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} $POD_NAME || true
-        
-        # 检查最终状态
+      register: pod_logs
+      when: pod_name.stdout != ""
+
+    - name: 显示 Pod 日志
+      debug:
+        var: pod_logs.stdout_lines
+      when: pod_name.stdout != ""
+
+    - name: 检查 Pod 是否运行
+      shell: |
+        POD_NAME="{{ pod_name.stdout }}"
         POD_STATUS=$(/usr/local/bin/k3s kubectl get pod $POD_NAME -n {{ use_namespace }} -o jsonpath='{.status.phase}')
         if [ "$POD_STATUS" != "Running" ]; then
           echo "错误: Pod 未能正常运行，状态: $POD_STATUS"
-          echo "检查 Events:"
+          echo "=== Events ==="
           /usr/local/bin/k3s kubectl get events -n {{ use_namespace }}
           exit 1
         fi
-        
         echo "Pod 已成功启动"
-      register: wait_result 
+      register: final_status
+      when: pod_name.stdout != "" 
