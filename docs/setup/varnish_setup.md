@@ -1,195 +1,160 @@
-# Varnish 安装配置指南
+# Varnish 安装和配置指南
 
-## 1. 基本信息
-- 版本：Varnish 7.5
-- 部署方式：Kubernetes Pod
-- 默认端口：
-  - K8s NodePort：30180
-  - 标准安装：
-    - HTTP 端口：6081
-    - 管理端口：6082
-- 推荐内存配置：
-  - 小型站点（<5000 SKU）：2GB
-  - 中型站点（5000-50000 SKU）：4GB
-  - 大型站点（>50000 SKU）：8GB 或更多
-  - 注意：实际内存需求取决于产品数量、页面大小和并发访问量
+本文档介绍如何在 K3s 环境中安装和配置 Varnish 缓存服务器。安装过程分为两个步骤：基础环境安装和站点配置。
 
-## 2. 安装方法
+## 1. 基础环境安装
 
-### 2.1 基本安装
-使用默认配置安装：
+首先需要安装 Varnish 的基础环境。这一步会创建 Varnish 的基本 Kubernetes 资源，包括 Deployment、Service 和 ConfigMap。
+
+### 1.1 安装命令
+
 ```bash
-ansible-playbook ansible/install/install-varnish.yml
+ansible-playbook ansible/install/install-varnish-base.yml -e "namespace=magento memory=4G nodeport=30180"
 ```
 
-### 2.2 自定义安装
-使用自定义参数安装：
+### 1.2 参数说明
+
+- `namespace`: Kubernetes 命名空间（默认：default）
+- `memory`: Varnish 使用的内存大小（默认：1G）
+- `nodeport`: 服务暴露的节点端口（默认：30180）
+
+### 1.3 安装内容
+
+- Varnish 7.5 容器
+- NodePort 类型的 Service
+- 基础 VCL 配置的 ConfigMap
+
+## 2. 站点配置
+
+安装完基础环境后，可以为特定的站点配置 Varnish 缓存规则。
+
+### 2.1 配置命令
+
 ```bash
-ansible-playbook ansible/install/install-varnish.yml -e "namespace=magento nodeport=30182 backend=nginx backend_port=80 memory=2G"
+ansible-playbook ansible/install/configure-varnish-site.yml \
+  -e "namespace=magento" \
+  -e "site_name=site1" \
+  -e "backend=site1-nginx" \
+  -e "backend_port=80"
 ```
 
-### 2.3 可配置参数
-| 参数 | 说明 | 默认值 | 示例 |
-|------|------|--------|------|
-| namespace | 部署的命名空间 | default | magento |
-| nodeport | 服务端口 | 30180 | 30182 |
-| backend | 后端服务名称 | nginx | web-server |
-| backend_port | 后端服务端口 | 80 | 8080 |
-| memory | Varnish 内存大小 | 1G | 2G |
+### 2.2 参数说明
 
-## 3. 配置说明
+- `namespace`: Kubernetes 命名空间（默认：default）
+- `site_name`: 站点名称（**必需参数**）
+- `backend`: 后端服务名称（默认：nginx）
+- `backend_port`: 后端服务端口（默认：80）
 
-### 3.1 VCL 配置
-默认 VCL 配置包含：
-- 健康检查 (/health_check.php)
-- 静态资源缓存规则
-- Cookie 处理规则
-- 缓存时间设置
+### 2.3 配置内容
 
-### 3.2 缓存策略
-- CSS/JS 文件：缓存 24 小时
-- 图片文件：缓存 48 小时
-- 其他内容：缓存 1 小时
+- 更新 VCL 配置
+- 设置后端服务
+- 配置缓存规则
+- 自动重启 Pod 以应用新配置
 
-### 3.3 多站点配置
-```vcl
-# 在 vcl_recv 中添加多站点配置
-sub vcl_recv {
-    # 根据域名选择后端
-    if (req.http.host ~ "^site1\.example\.com$") {
-        set req.backend_hint = site1;
-    } elsif (req.http.host ~ "^site2\.example\.com$") {
-        set req.backend_hint = site2;
-    } elsif (req.http.host ~ "^site3\.example\.com$") {
-        set req.backend_hint = site3;
-    } elsif (req.http.host ~ "^site4\.example\.com$") {
-        set req.backend_hint = site4;
-    }
+## 3. 使用示例
 
-    # 为不同站点设置不同的缓存键
-    hash_data(req.http.host);
-}
+### 3.1 安装基础环境
 
-# 定义多个后端
-backend site1 {
-    .host = "site1-backend";
-    .port = "80";
-}
-
-backend site2 {
-    .host = "site2-backend";
-    .port = "80";
-}
-
-backend site3 {
-    .host = "site3-backend";
-    .port = "80";
-}
-
-backend site4 {
-    .host = "site4-backend";
-    .port = "80";
-}
+```bash
+# 在 magento 命名空间中安装 Varnish，分配 4GB 内存
+ansible-playbook ansible/install/install-varnish-base.yml \
+  -e "namespace=magento" \
+  -e "memory=4G"
 ```
 
-### 3.4 多站点资源分配
-- 单实例多站点（推荐）：
-  - 总内存：4GB 可服务多个站点
-  - 通过 VCL 配置区分站点
-  - 缓存键包含域名，避免冲突
-  - 可动态分配内存给不同站点
+### 3.2 配置多个站点
 
-- 多实例方案（不推荐）：
-  - 每个站点独立实例
-  - 需要更多系统资源
-  - 管理维护成本高
-  - 建议仅在特殊需求时使用
+```bash
+# 配置第一个站点
+ansible-playbook ansible/install/configure-varnish-site.yml \
+  -e "namespace=magento" \
+  -e "site_name=site1" \
+  -e "backend=site1-nginx" \
+  -e "backend_port=80"
 
-### 3.5 健康检查配置
-```vcl
-.probe = {
-    .url = "/health_check.php";
-    .timeout = 2s;
-    .interval = 5s;
-    .window = 10;
-    .threshold = 5;
-}
+# 配置第二个站点
+ansible-playbook ansible/install/configure-varnish-site.yml \
+  -e "namespace=magento" \
+  -e "site_name=site2" \
+  -e "backend=site2-nginx" \
+  -e "backend_port=80"
 ```
 
-## 4. 验证部署
+## 4. 缓存规则说明
 
-### 4.1 检查 Pod 状态
+默认的 VCL 配置包含以下规则：
+
+### 4.1 不缓存的情况
+
+- POST 请求
+- 带有认证信息的请求
+- 非 GET/HEAD 请求
+
+### 4.2 缓存时间设置
+
+- CSS/JS 文件：24 小时
+- 图片文件：48 小时
+- 其他内容：1 小时
+
+### 4.3 Cookie 处理
+
+- 静态资源请求（CSS/JS/图片等）会移除 Cookie
+- 其他请求保留 Cookie
+
+## 5. 监控和维护
+
+### 5.1 查看 Pod 状态
+
 ```bash
 kubectl get pods -n <namespace> -l app=varnish
 ```
 
-### 4.2 检查服务状态
-```bash
-kubectl get svc -n <namespace> -l app=varnish
-```
+### 5.2 查看日志
 
-### 4.3 验证缓存
-```bash
-# 检查缓存状态
-curl -I http://<node-ip>:<nodeport>/
-
-# 查看缓存命中信息
-# X-Cache: HIT/MISS
-# X-Cache-Hits: 数字
-```
-
-## 5. 故障排除
-
-### 5.1 Pod 无法启动
-检查以下内容：
-1. 资源配额是否充足
-2. ConfigMap 是否正确创建
-3. 查看 Pod 日志：
 ```bash
 kubectl logs -n <namespace> -l app=varnish
 ```
 
-### 5.2 缓存未生效
-检查以下内容：
-1. VCL 配置是否正确加载
-2. 后端服务是否可访问
-3. 请求头中是否包含不缓存标记
+### 5.3 重启 Varnish
 
-### 5.3 常见问题
-1. 内存不足
-   - 症状：Pod 频繁重启
-   - 解决：增加 memory 参数值
-
-2. 后端连接失败
-   - 症状：健康检查失败
-   - 解决：确认 backend_host 和 backend_port 配置
-
-3. 端口冲突
-   - 症状：Service 创建失败
-   - 解决：更换 nodeport 值
-
-## 6. 维护操作
-
-### 6.1 清理缓存
 ```bash
-kubectl exec -n <namespace> <varnish-pod> -- varnishadm "ban req.url ~ ."
+kubectl rollout restart deployment varnish -n <namespace>
 ```
 
-### 6.2 查看缓存统计
+### 5.4 查看配置
+
 ```bash
-kubectl exec -n <namespace> <varnish-pod> -- varnishstat
+kubectl get configmap varnish-config -n <namespace> -o yaml
 ```
 
-### 6.3 更新配置
-1. 修改 ConfigMap
-2. 重启 Pod 使配置生效
+## 6. 注意事项
 
-## 7. 最佳实践
-1. Magento 环境内存配置：
-   - 最小配置：2GB（开发环境）
-   - 建议配置：4GB（生产环境）
-   - 大型站点：8GB 或更多
-   - 监控内存使用率，适时调整
-2. 为不同环境使用不同的命名空间
-3. 定期监控缓存命中率
-4. 根据业务需求调整缓存策略 
+1. 确保有足够的内存资源
+2. 建议在生产环境使用至少 4GB 内存
+3. 配置新站点时会重启 Varnish Pod
+4. 重启过程中可能会有短暂的服务中断
+5. 建议在低峰期进行配置更改
+
+## 7. 故障排除
+
+### 7.1 Pod 无法启动
+
+检查事项：
+- 内存资源是否足够
+- ConfigMap 是否正确创建
+- 后端服务是否可访问
+
+### 7.2 缓存未生效
+
+检查事项：
+- VCL 配置是否正确应用
+- 请求是否符合缓存规则
+- 后端服务响应头是否正确
+
+### 7.3 性能问题
+
+优化建议：
+- 适当增加内存配置
+- 调整缓存时间
+- 优化后端服务响应时间 
