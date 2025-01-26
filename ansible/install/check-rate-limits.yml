@@ -3,36 +3,66 @@
   hosts: all
   gather_facts: yes
   tasks:
-    - name: 检查 Let's Encrypt 限制状态
+    - name: 检查 cert-manager 日志
       shell: |
-        echo "=== 检查 Let's Encrypt 限制状态 ==="
-        
-        echo "1. 检查 cert-manager 日志中的限制信息..."
+        echo "=== 检查 cert-manager 日志中的限制信息 ==="
         kubectl logs -n cert-manager -l app=cert-manager --tail=500 | grep -i "rate limit\|too many\|exceeded\|limit reached"
-        
-        echo "2. 检查失败的证书请求历史..."
-        echo "详细信息："
-        kubectl get certificaterequest -n awx awx-tls-1 -o yaml
-        echo "简要信息："
-        kubectl get certificaterequest -n awx --sort-by=.metadata.creationTimestamp
-        
-        echo "3. 检查 ACME Orders 历史..."
-        echo "详细信息："
-        kubectl get orders.acme.cert-manager.io -n awx awx-tls-1-1435734878 -o yaml
-        echo "简要信息："
-        kubectl get orders.acme.cert-manager.io -n awx --sort-by=.metadata.creationTimestamp
-        
-        echo "4. 检查详细的失败原因..."
-        kubectl get challenges.acme.cert-manager.io -n awx -o yaml
-        
-        echo "5. 检查 Events 中的错误信息..."
-        kubectl get events -n awx --sort-by=.lastTimestamp | grep -i "certificate\|acme\|challenge\|error\|fail"
-        
-        echo "6. 检查证书状态..."
-        kubectl get certificate -n awx awx-tls -o yaml
-      register: rate_limit_check
+      register: cert_manager_logs
       ignore_errors: yes
 
-    - name: 显示检查结果
+    - name: 显示 cert-manager 日志
       debug:
-        msg: "{{ rate_limit_check.stdout_lines }}" 
+        msg: "{{ cert_manager_logs.stdout_lines }}"
+
+    - name: 检查证书请求状态
+      shell: |
+        echo "=== 证书请求状态 ==="
+        kubectl get certificaterequest -n awx --sort-by=.metadata.creationTimestamp
+        
+        echo -e "\n=== 证书请求详细信息 ==="
+        kubectl get certificaterequest -n awx awx-tls-1 -o jsonpath='{.status.conditions[*].message}'
+      register: cert_request_status
+      ignore_errors: yes
+
+    - name: 显示证书请求状态
+      debug:
+        msg: "{{ cert_request_status.stdout_lines }}"
+
+    - name: 检查 ACME Orders
+      shell: |
+        echo "=== ACME Orders 状态 ==="
+        kubectl get orders.acme.cert-manager.io -n awx --sort-by=.metadata.creationTimestamp
+        
+        echo -e "\n=== ACME Orders 失败原因 ==="
+        kubectl get orders.acme.cert-manager.io -n awx awx-tls-1-1435734878 -o jsonpath='{.status.reason}'
+      register: acme_orders
+      ignore_errors: yes
+
+    - name: 显示 ACME Orders
+      debug:
+        msg: "{{ acme_orders.stdout_lines }}"
+
+    - name: 检查错误事件
+      shell: |
+        echo "=== 最近的错误事件 ==="
+        kubectl get events -n awx --sort-by=.lastTimestamp | grep -i "certificate\|acme\|challenge\|error\|fail" | tail -n 10
+      register: error_events
+      ignore_errors: yes
+
+    - name: 显示错误事件
+      debug:
+        msg: "{{ error_events.stdout_lines }}"
+
+    - name: 检查证书状态
+      shell: |
+        echo "=== 证书状态 ==="
+        kubectl get certificate -n awx awx-tls -o wide
+        
+        echo -e "\n=== 证书详细状态 ==="
+        kubectl get certificate -n awx awx-tls -o jsonpath='{.status.conditions[*].message}'
+      register: cert_status
+      ignore_errors: yes
+
+    - name: 显示证书状态
+      debug:
+        msg: "{{ cert_status.stdout_lines }}" 
