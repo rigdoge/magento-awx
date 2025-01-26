@@ -6,7 +6,7 @@
     domain_name: awx.tschenfeng.com
     email_address: ssl@tschenfeng.com
     cluster_issuer_name: letsencrypt-prod
-    staging: true   # 使用 Let's Encrypt 测试环境，避免触发生产环境速率限制
+    staging: false   # 使用 Let's Encrypt 生产环境
     cert_manager_namespace: cert-manager
 
   tasks:
@@ -17,7 +17,7 @@
           echo "找到 K3s kubeconfig"
           mkdir -p ~/.kube
           cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-          chmod 600 ~/.kube/config
+          chmod 644 ~/.kube/config
           echo "已复制 kubeconfig 到 ~/.kube/config"
         else
           echo "未找到 K3s kubeconfig"
@@ -31,17 +31,20 @@
 
     - name: 创建 Cloudflare API Token Secret
       shell: |
-        # 创建包含 API Token 的文件，确保没有换行符
-        echo -n "{{ cloudflare_api_token }}" > /tmp/cloudflare-api-token
+        # 创建临时文件
+        TEMP_FILE=$(mktemp)
+        
+        # 写入 API Token，确保没有换行符
+        echo -n "{{ cloudflare_api_token }}" > "$TEMP_FILE"
         
         # 创建 Secret
         kubectl create secret generic cloudflare-api-token \
-          --namespace cert-manager \
-          --from-file=api-token=/tmp/cloudflare-api-token \
+          --namespace {{ cert_manager_namespace }} \
+          --from-file=api-token="$TEMP_FILE" \
           --dry-run=client -o yaml | kubectl apply -f -
         
         # 清理临时文件
-        rm -f /tmp/cloudflare-api-token
+        rm -f "$TEMP_FILE"
       register: secret_result
 
     - name: 显示 kubeconfig 检查结果
@@ -61,7 +64,7 @@
               email: {{ email_address }}
               server: "{% if staging %}https://acme-staging-v02.api.letsencrypt.org/directory{% else %}https://acme-v02.api.letsencrypt.org/directory{% endif %}"
               privateKeySecretRef:
-                name: letsencrypt-prod
+                name: {{ cluster_issuer_name }}
               solvers:
                 - dns01:
                     cloudflare:
