@@ -6,8 +6,17 @@
     site_name: chen  # 站点名称，可以被外部变量覆盖
     php_fpm_namespace: magento-shared  # PHP-FPM 所在的命名空间
   tasks:
+    - name: 获取 Kubernetes 认证信息
+      kubernetes.core.k8s_auth:
+        host: "{{ k8s_host }}"  # Kubernetes API 地址
+        api_key: "{{ k8s_api_key }}"  # API 令牌
+        validate_certs: "{{ k8s_validate_certs | default(true) }}"
+      register: k8s_auth_results
+      no_log: true
+
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_auth_results.kubeconfig }}"
         state: present
         definition:
           apiVersion: v1
@@ -53,6 +62,7 @@
 
     - name: 获取当前 PHP-FPM Deployment
       kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_auth_results.kubeconfig }}"
         api_version: apps/v1
         kind: Deployment
         name: php-fpm
@@ -61,6 +71,7 @@
 
     - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
       kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_auth_results.kubeconfig }}"
         state: present
         definition:
           apiVersion: apps/v1
@@ -87,6 +98,7 @@
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_auth_results.kubeconfig }}"
         kind: Pod
         namespace: "{{ php_fpm_namespace }}"
         label_selectors:
