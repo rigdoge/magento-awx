@@ -17,6 +17,7 @@
         kubectl delete secret -n awx awx-tls --ignore-not-found
         kubectl delete clusterissuer letsencrypt-staging --ignore-not-found
         kubectl delete clusterissuer letsencrypt-prod --ignore-not-found
+        kubectl delete secret -n cert-manager cloudflare-api-token --ignore-not-found
         echo "清理完成"
       ignore_errors: yes
 
@@ -211,13 +212,3 @@
           ClusterIssuer: {{ cluster_issuer_name }}
           证书名称: awx-tls
           命名空间: awx 
-
-    - name: 清理现有资源
-      shell: |
-        echo "清理现有证书资源..."
-        kubectl delete certificate -n awx awx-tls --ignore-not-found
-        kubectl delete secret -n awx awx-tls --ignore-not-found
-        kubectl delete clusterissuer letsencrypt-staging --ignore-not-found
-        kubectl delete clusterissuer letsencrypt-prod --ignore-not-found
-        echo "清理完成"
-      ignore_errors: yes 
