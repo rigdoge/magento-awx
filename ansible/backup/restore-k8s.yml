@@ -16,13 +16,13 @@
 
     - name: 检查备份文件是否存在
       stat:
-        path: "{{ backup_dir }}/awx-backup-{{ restore_file }}.tar.gz"
+        path: "{{ backup_dir }}/{{ restore_file }}.tar.gz"
       register: backup_stat
       become: yes
 
     - name: 验证备份文件存在
       fail:
-        msg: "备份文件 {{ backup_dir }}/awx-backup-{{ restore_file }}.tar.gz 不存在"
+        msg: "备份文件 {{ backup_dir }}/{{ restore_file }}.tar.gz 不存在"
       when: not backup_stat.stat.exists
 
     - name: 创建临时目录
@@ -34,7 +34,7 @@
 
     - name: 解压备份文件
       unarchive:
-        src: "{{ backup_dir }}/awx-backup-{{ restore_file }}.tar.gz"
+        src: "{{ backup_dir }}/{{ restore_file }}.tar.gz"
         dest: "{{ temp_dir }}"
         remote_src: yes
       become: yes
