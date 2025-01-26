@@ -185,7 +185,7 @@
             name: varnish-config
             namespace: {{ use_namespace }}
           data:
-            default.vcl: |
+            default.vcl: |-
 {{ vcl_config.content | indent(14, True) }}
 
     - name: 清理旧的部署
