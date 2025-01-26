@@ -1,0 +1,33 @@
+---
+- name: 卸载 Redis
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('default') }}"
+  tasks:
+    - name: 卸载 Redis 资源
+      shell: |
+        echo "=== 开始卸载 Redis ==="
+        
+        # 删除 Deployment
+        echo "删除 Deployment..."
+        /usr/local/bin/k3s kubectl delete deployment redis -n {{ use_namespace }} || true
+        
+        # 删除 Service
+        echo "删除 Service..."
+        /usr/local/bin/k3s kubectl delete service redis -n {{ use_namespace }} || true
+        
+        # 删除 ConfigMap
+        echo "删除 ConfigMap..."
+        /usr/local/bin/k3s kubectl delete configmap redis-config -n {{ use_namespace }} || true
+        
+        # 删除 PVC
+        echo "删除 PVC..."
+        /usr/local/bin/k3s kubectl delete pvc redis-data -n {{ use_namespace }} || true
+        
+        echo "=== Redis 卸载完成 ==="
+      register: uninstall_result
+
+    - name: 显示卸载结果
+      debug:
+        var: uninstall_result.stdout_lines 
