@@ -65,6 +65,55 @@
             projects_storage_size: 8Gi
             postgres_storage_class: local-path
             postgres_storage_size: 8Gi
+            task_privileged: false
+            task_resource_requirements:
+              requests:
+                cpu: 500m
+                memory: 1Gi
+              limits:
+                cpu: 1000m
+                memory: 2Gi
+            web_resource_requirements:
+              requests:
+                cpu: 500m
+                memory: 1Gi
+              limits:
+                cpu: 1000m
+                memory: 2Gi
+            ee_resource_requirements:
+              requests:
+                cpu: 500m
+                memory: 1Gi
+              limits:
+                cpu: 1000m
+                memory: 2Gi
+            replicas: 1
+            task_replicas: 1
+            web_replicas: 1
+            ee_replicas: 1
+            auto_upgrade: false
+            control_plane_priority_class: system-cluster-critical
+            task_priority_class: system-cluster-critical
+            development_mode: false
+            create_preload_data: true
+            admin_user: admin
+            admin_password_secret: awx-admin-password
+            postgres_configuration_secret: awx-postgres-configuration
+            bundle_cacert_secret: awx-custom-certs
+            ingress_type: none
+            image_pull_policy: IfNotPresent
+            image_pull_secrets: []
+            task_args:
+              - "--callbacks-max-retries=10"
+              - "--callbacks-retry-delay=60"
+            task_extra_env:
+              - name: "SUPERVISOR_WEB_CONFIG"
+                value: "true"
+              - name: "AWX_CLEANUP_PATHS"
+                value: "/tmp"
+            web_extra_env:
+              - name: "SUPERVISOR_WEB_CONFIG"
+                value: "true"
 
     - name: Wait for AWX instance to be ready
       k8s_info:
