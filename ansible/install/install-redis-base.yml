@@ -150,5 +150,20 @@
     - name: 等待 Pod 创建完成
       shell: |
         echo "=== 等待 Pod 创建完成 ==="
-        /usr/local/bin/k3s kubectl wait --for=condition=Ready pod -l app=redis -n {{ use_namespace }} --timeout=300s
+        for i in $(seq 1 30); do
+          echo "检查 Pod 状态... 第 $i 次尝试"
+          /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o wide
+          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis | grep -q Running; then
+            echo "Pod 已经运行"
+            exit 0
+          fi
+          echo "检查 Pod 详细信息..."
+          /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} -l app=redis
+          echo "检查 PVC 状态..."
+          /usr/local/bin/k3s kubectl get pvc -n {{ use_namespace }}
+          echo "等待 10 秒后重试..."
+          sleep 10
+        done
+        echo "错误: Pod 未能在指定时间内启动"
+        exit 1
       register: wait_result 
