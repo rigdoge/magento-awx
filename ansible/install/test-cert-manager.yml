@@ -1,0 +1,74 @@
+---
+- name: 测试 cert-manager 证书
+  hosts: all
+  gather_facts: no
+  vars:
+    namespace: awx
+    domain: awx.tschenfeng.com  # AWX 的域名
+  
+  tasks:
+    - name: 创建测试 Ingress
+      copy:
+        dest: /tmp/test-ingress.yaml
+        content: |
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: awx-ingress
+            namespace: {{ namespace }}
+            annotations:
+              kubernetes.io/ingress.class: nginx
+              cert-manager.io/cluster-issuer: letsencrypt-staging
+              nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
+              nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+              nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+              nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          spec:
+            tls:
+            - hosts:
+              - {{ domain }}
+              secretName: awx-cert-tls
+            rules:
+            - host: {{ domain }}
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: awx-demo-service  # AWX service name
+                      port:
+                        number: 80
+
+    - name: 应用测试 Ingress
+      shell: |
+        kubectl apply -f /tmp/test-ingress.yaml
+      register: ingress_result
+
+    - name: 等待证书创建
+      shell: |
+        echo "等待证书创建..."
+        kubectl wait --for=condition=ready certificate/awx-cert-tls -n {{ namespace }} --timeout=300s
+      register: cert_wait_result
+
+    - name: 检查证书状态
+      shell: |
+        echo "=== 证书状态 ==="
+        kubectl describe certificate awx-cert-tls -n {{ namespace }}
+        
+        echo -e "\n=== 证书请求状态 ==="
+        kubectl get certificaterequest -n {{ namespace }}
+        
+        echo -e "\n=== 证书挑战状态 ==="
+        kubectl get challenges -n {{ namespace }}
+        
+        echo -e "\n=== 详细证书信息 ==="
+        kubectl get secret awx-cert-tls -n {{ namespace }} -o yaml
+      register: cert_status
+
+    - name: 显示结果
+      debug:
+        msg: 
+          - "Ingress 创建结果: {{ ingress_result.stdout_lines | default([]) }}"
+          - "证书等待结果: {{ cert_wait_result.stdout_lines | default([]) }}"
+          - "证书状态: {{ cert_status.stdout_lines | default([]) }}" 

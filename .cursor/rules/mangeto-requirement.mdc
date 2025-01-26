@@ -1,0 +1,37 @@
+---
+description: 
+globs: 
+---
+1. composer global config http-basic.repo.magento.com 
+   4f44d6581ab1ff92b53b1e6cc8e4e9b5 
+   8da547c46318a11a0f4a1785cb8171ba
+
+2. site 1 dns 已经配置完毕。
+   namespace: chen
+   domain: magento.tschenfeng.com
+   siteuser: doge
+   password: doge.2010
+   
+      
+3. database 数据库信息见 install-percona.yml
+   name: chenmage
+   username: chen
+   password: chen.2010
+
+4. rabbitmq
+   username: chen
+   password: chen2010
+
+5. redis-server
+   base setup
+
+6. varnish
+   base setup
+
+7. php-8.3-fpm
+   
+8. opensearch
+   base setup
+
+
+

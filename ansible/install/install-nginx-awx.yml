@@ -1,0 +1,128 @@
+---
+- name: 安装 AWX Nginx
+  hosts: all
+  gather_facts: no
+  vars:
+    namespace: awx
+    domain: awx.tschenfeng.com
+
+  tasks:
+    - name: 创建 Nginx ConfigMap
+      copy:
+        dest: /tmp/nginx-awx-config.yaml
+        content: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: nginx-awx-config
+            namespace: {{ namespace }}
+          data:
+            nginx.conf: |
+              events {
+                worker_connections 1024;
+              }
+              http {
+                upstream awx_web {
+                  server awx-demo-web:8052;
+                }
+                upstream awx_task {
+                  server awx-demo-task:8052;
+                }
+                server {
+                  listen 80;
+                  server_name {{ domain }};
+                  
+                  location / {
+                    proxy_pass http://awx_web;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection "upgrade";
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                    proxy_buffering off;
+                    proxy_connect_timeout 3600;
+                    proxy_read_timeout    3600;
+                    proxy_send_timeout    3600;
+                    client_max_body_size  0;
+                  }
+
+                  location /websocket {
+                    proxy_pass http://awx_task;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection "upgrade";
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                    proxy_buffering off;
+                  }
+                }
+              }
+
+    - name: 创建 Nginx Deployment
+      copy:
+        dest: /tmp/nginx-awx.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: nginx-awx
+            namespace: {{ namespace }}
+            labels:
+              app: nginx-awx
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: nginx-awx
+            template:
+              metadata:
+                labels:
+                  app: nginx-awx
+              spec:
+                containers:
+                - name: nginx
+                  image: nginx:1.25
+                  ports:
+                  - containerPort: 80
+                  volumeMounts:
+                  - name: nginx-config
+                    mountPath: /etc/nginx/nginx.conf
+                    subPath: nginx.conf
+                volumes:
+                - name: nginx-config
+                  configMap:
+                    name: nginx-awx-config
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: nginx-awx
+            namespace: {{ namespace }}
+          spec:
+            ports:
+            - port: 80
+              targetPort: 80
+            selector:
+              app: nginx-awx
+
+    - name: 应用配置
+      shell: |
+        kubectl apply -f /tmp/nginx-awx-config.yaml
+        kubectl apply -f /tmp/nginx-awx.yaml
+      register: deploy_result
+
+    - name: 等待 Nginx Pod 就绪
+      shell: |
+        echo "等待 Nginx Pod 就绪..."
+        kubectl wait --for=condition=ready pod -l app=nginx-awx -n {{ namespace }} --timeout=300s
+      register: wait_result
+
+    - name: 显示结果
+      debug:
+        msg: 
+          - "部署结果: {{ deploy_result.stdout_lines | default([]) }}"
+          - "等待结果: {{ wait_result.stdout_lines | default([]) }}" 

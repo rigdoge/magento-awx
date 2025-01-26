@@ -1,164 +1,71 @@
 ---
-- name: 配置 cert-manager 证书
+- name: 配置 cert-manager
   hosts: all
-  gather_facts: yes
-  vars:
-    domain_name: awx.tschenfeng.com
-    email_address: ssl@tschenfeng.com
-    cluster_issuer_name: letsencrypt-staging
-    staging: true   # 使用 Let's Encrypt 测试环境
-    cert_manager_namespace: cert-manager
-
+  gather_facts: no
   tasks:
-    - name: 清理现有资源
-      shell: |
-        echo "=== 步骤 1: 清理现有资源 ==="
-        kubectl delete certificate,secret,order,challenge -n awx --all --ignore-not-found
-        kubectl delete clusterissuer --all --ignore-not-found
-        kubectl delete secret -n cert-manager cloudflare-api-token --ignore-not-found
-        echo "清理完成"
-      ignore_errors: yes
-
-    - name: 检查必要组件
-      shell: |
-        echo "=== 步骤 2: 检查必要组件 ==="
-        echo "检查 cert-manager..."
-        if ! kubectl get pods -n cert-manager | grep -q 'cert-manager.*Running'; then
-          echo "错误: cert-manager 未运行"
-          exit 1
-        fi
-        
-        echo "检查 Ingress Controller..."
-        if ! kubectl get pods -n ingress-nginx | grep -q 'ingress-nginx-controller.*Running'; then
-          echo "错误: Ingress Controller 未运行"
-          exit 1
-        fi
-        
-        echo "所有组件正常运行"
-      register: component_check
-
-    - name: 创建 Cloudflare API Token Secret
-      shell: |
-        echo "=== 步骤 3: 配置 Cloudflare ==="
-        kubectl create secret generic cloudflare-api-token \
-          --namespace {{ cert_manager_namespace }} \
-          --from-literal=api-token="{{ cloudflare_api_token }}" \
-          --dry-run=client -o yaml | kubectl apply -f -
-        
-        echo "等待 Secret 就绪..."
-        kubectl get secret cloudflare-api-token -n {{ cert_manager_namespace }} -o name
-      register: secret_result
-
-    - name: 创建 ClusterIssuer
+    - name: 创建 staging ClusterIssuer
       copy:
-        dest: /tmp/cluster-issuer.yaml
+        dest: /tmp/staging-issuer.yaml
         content: |
           apiVersion: cert-manager.io/v1
           kind: ClusterIssuer
           metadata:
-            name: {{ cluster_issuer_name }}
+            name: letsencrypt-staging
           spec:
             acme:
-              email: {{ email_address }}
-              server: {{ 'https://acme-staging-v02.api.letsencrypt.org/directory' if staging else 'https://acme-v02.api.letsencrypt.org/directory' }}
+              server: https://acme-staging-v02.api.letsencrypt.org/directory
+              email: admin@example.com  # 替换为你的邮箱
               privateKeySecretRef:
-                name: {{ cluster_issuer_name }}
+                name: letsencrypt-staging
               solvers:
-                - dns01:
-                    cloudflare:
-                      email: {{ email_address }}
-                      apiTokenSecretRef:
-                        name: cloudflare-api-token
-                        key: api-token
+              - http01:
+                  ingress:
+                    class: nginx
 
-    - name: 应用 ClusterIssuer
-      shell: |
-        echo "=== 步骤 4: 配置证书颁发者 ==="
-        kubectl apply -f /tmp/cluster-issuer.yaml
-        echo "等待 ClusterIssuer 就绪..."
-        sleep 5
-        kubectl get clusterissuer {{ cluster_issuer_name }} -o wide
-
-    - name: 配置 AWX Ingress
+    - name: 创建 production ClusterIssuer
       copy:
-        dest: /tmp/awx-ingress.yaml
+        dest: /tmp/prod-issuer.yaml
         content: |
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
           metadata:
-            name: awx-ingress
-            namespace: awx
-            annotations:
-              cert-manager.io/cluster-issuer: "{{ cluster_issuer_name }}"
-              kubernetes.io/ingress.class: "nginx"
-              nginx.ingress.kubernetes.io/ssl-redirect: "false"
+            name: letsencrypt-prod
           spec:
-            tls:
-            - hosts:
-              - {{ domain_name }}
-              secretName: awx-tls
-            rules:
-            - host: {{ domain_name }}
-              http:
-                paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: awx-service
-                      port:
-                        number: 80
+            acme:
+              server: https://acme-v02.api.letsencrypt.org/directory
+              email: admin@example.com  # 替换为你的邮箱
+              privateKeySecretRef:
+                name: letsencrypt-prod
+              solvers:
+              - http01:
+                  ingress:
+                    class: nginx
 
-    - name: 应用 AWX Ingress
+    - name: 应用 ClusterIssuer 配置
       shell: |
-        echo "=== 步骤 5: 配置 Ingress ==="
-        kubectl apply -f /tmp/awx-ingress.yaml
-        echo "等待 Ingress 就绪..."
-        sleep 5
-        kubectl get ingress -n awx awx-ingress -o wide
+        kubectl apply -f /tmp/staging-issuer.yaml
+        kubectl apply -f /tmp/prod-issuer.yaml
+      register: issuer_result
 
-    - name: 等待证书就绪
+    - name: 等待 ClusterIssuer 就绪
       shell: |
-        echo "=== 步骤 6: 等待证书就绪 ==="
-        echo "这可能需要几分钟时间..."
-        
-        for i in $(seq 1 30); do
-          echo "检查第 $i 次..."
-          
-          if kubectl get certificate -n awx awx-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q "True"; then
-            echo "证书已就绪！"
-            kubectl get certificate -n awx awx-tls -o wide
-            exit 0
-          fi
-          
-          echo "证书状态："
-          kubectl get certificate,certificaterequest,order,challenge -n awx
-          
-          echo "等待 10 秒..."
-          sleep 10
-        done
-        
-        echo "证书等待超时！请检查以下信息："
-        kubectl describe certificate,certificaterequest,order,challenge -n awx
-        exit 1
-      register: cert_wait_result
-      ignore_errors: yes
+        echo "等待 staging issuer 就绪..."
+        kubectl wait --for=condition=ready clusterissuer/letsencrypt-staging --timeout=60s
+        echo "等待 production issuer 就绪..."
+        kubectl wait --for=condition=ready clusterissuer/letsencrypt-prod --timeout=60s
+      register: wait_result
 
-    - name: 显示最终状态
+    - name: 检查 ClusterIssuer 状态
+      shell: |
+        echo "=== Staging Issuer 状态 ==="
+        kubectl describe clusterissuer letsencrypt-staging
+        echo -e "\n=== Production Issuer 状态 ==="
+        kubectl describe clusterissuer letsencrypt-prod
+      register: status_result
+
+    - name: 显示配置结果
       debug:
-        msg: |
-          配置状态：
-          {% if cert_wait_result.rc == 0 %}
-          ✅ 证书配置成功！
-          - 域名: {{ domain_name }}
-          - 证书: awx-tls ({{ "测试环境" if staging else "生产环境" }})
-          - 命名空间: awx
-          
-          下一步：
-          1. 验证 HTTPS 访问: https://{{ domain_name }}
-          2. 检查证书信息是否正确
-          3. 如果一切正常，可以切换到生产环境
-          {% else %}
-          ❌ 证书配置未完成
-          请检查以上日志了解详细信息
-          {% endif %} 
+        msg: 
+          - "Issuer 创建结果: {{ issuer_result.stdout_lines | default([]) }}"
+          - "等待结果: {{ wait_result.stdout_lines | default([]) }}"
+          - "状态检查: {{ status_result.stdout_lines | default([]) }}"
