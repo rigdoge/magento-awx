@@ -329,6 +329,37 @@
       debug:
         msg: "{{ test_access_result.stdout_lines + test_access_result.stderr_lines }}"
 
+    - name: 申请证书前检查 ModSecurity 状态
+      shell: |
+        set -x
+        echo "=== 检查 ModSecurity 状态 ==="
+        
+        # 检查 ModSecurity 是否启用
+        if kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -T 2>/dev/null | grep -q "modsecurity on"; then
+          echo "ModSecurity 已启用，添加白名单规则..."
+          
+          # 为 ACME 验证添加白名单
+          cat << EOF | kubectl -n {{ namespace }} exec -i {{ nginx_pod.stdout }} -- tee /etc/nginx/modsec/rules/whitelist-acme.conf
+# Allow ACME Challenge
+SecRule REQUEST_URI "@beginsWith /.well-known/acme-challenge/" \
+    "id:1000001,\
+    phase:1,\
+    pass,\
+    nolog,\
+    ctl:ruleEngine=Off"
+EOF
+          
+          # 重新加载 Nginx 配置
+          kubectl -n {{ namespace }} exec {{ nginx_pod.stdout }} -- nginx -s reload
+        else
+          echo "ModSecurity 未启用，继续证书申请..."
+        fi
+      register: modsec_check
+      
+    - name: 显示 ModSecurity 检查结果
+      debug:
+        msg: "{{ modsec_check.stdout_lines + modsec_check.stderr_lines }}"
+
     - name: 申请证书（在主机上运行 certbot）
       shell: |
         set -x
