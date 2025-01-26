@@ -89,24 +89,27 @@
 
     - name: 检查 Ingress NodePort
       shell: |
-        echo "检查 Ingress NodePort..."
+        # 只获取端口号
         INGRESS_HTTP_PORT=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
         INGRESS_HTTPS_PORT=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
-        echo "HTTP Port: $INGRESS_HTTP_PORT"
-        echo "HTTPS Port: $INGRESS_HTTPS_PORT"
         
-        # 保存端口信息到变量
+        # 显示信息到日志
+        echo "检查到的端口:" >&2
+        echo "HTTP Port: $INGRESS_HTTP_PORT" >&2
+        echo "HTTPS Port: $INGRESS_HTTPS_PORT" >&2
+        
+        # 只输出 HTTP 端口号
         echo "$INGRESS_HTTP_PORT"
       register: http_port_check
 
     - name: 设置端口变量
       set_fact:
-        ingress_http_port: "{{ http_port_check.stdout }}"
+        ingress_http_port: "{{ http_port_check.stdout | trim }}"
 
     - name: 显示端口信息
       debug:
         msg: 
-          - "HTTP Port: {{ ingress_http_port }}"
+          - "使用的 HTTP 端口: {{ ingress_http_port }}"
 
     - name: 配置 AWX Ingress
       copy:
