@@ -112,6 +112,13 @@
     - name: 检查初始证书状态
       shell: |
         echo "=== 初始证书状态检查 ==="
+        
+        echo "检查 Cloudflare API Token Secret..."
+        kubectl get secret cloudflare-api-token -n cert-manager -o yaml
+        
+        echo "检查 cert-manager 日志..."
+        kubectl logs -n cert-manager -l app=cert-manager --tail=50
+        
         echo "检查 ClusterIssuer 状态..."
         kubectl get clusterissuer {{ cluster_issuer_name }} -o wide
         
