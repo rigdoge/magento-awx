@@ -1,10 +1,10 @@
 ---
-- name: 备份 AWX
+- name: 备份 AWX K8s 资源
   hosts: KS-1
   gather_facts: yes
   vars:
-    timestamp: "{{ lookup('pipe', 'date +%Y%m%d') }}"
     backup_dir: "/backup/awx"
+    timestamp: "{{ ansible_date_time.year }}{{ ansible_date_time.month }}{{ ansible_date_time.day }}_{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}{{ ansible_date_time.second }}"
     use_namespace: "awx"
   
   tasks:
@@ -13,6 +13,7 @@
         path: "{{ backup_dir }}/{{ timestamp }}"
         state: directory
         mode: '0755'
+      become: yes
 
     - name: 备份 AWX 资源
       shell: |
@@ -59,4 +60,6 @@
 
     - name: 清理旧备份
       shell: |
-        find {{ backup_dir }} -name "awx-backup-*.tar.gz" -mtime +7 -delete 
+        # 保留最近 7 天的备份
+        find {{ backup_dir }} -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \;
+      become: yes 

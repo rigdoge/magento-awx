@@ -1,28 +1,28 @@
 ---
-- name: 还原 AWX
+- name: 还原 AWX K8s 资源
   hosts: KS-1
   gather_facts: yes
   vars:
     backup_dir: "/backup/awx"
-    restore_file: "{{ backup_file | default('') }}"
+    restore_file: "{{ backup_timestamp | default('') }}"  # 通过 -e backup_timestamp=YYYYMMDD_HHMMSS 指定要还原的备份
     temp_dir: "/tmp/awx-restore"
-    namespace: "awx"
+    use_namespace: "awx"
   
   tasks:
-    - name: 检查还原文件参数
+    - name: 检查还原时间戳参数
       fail:
-        msg: "请通过 -e backup_file=awx-backup-YYYY-MM-DD.tar.gz 指定要还原的备份文件"
+        msg: "请通过 -e backup_timestamp=YYYYMMDD_HHMMSS 指定要还原的备份时间戳，例如: -e backup_timestamp=20240326_143022"
       when: restore_file == ''
 
-    - name: 检查还原文件是否存在
+    - name: 检查备份目录是否存在
       stat:
         path: "{{ backup_dir }}/{{ restore_file }}"
       register: backup_stat
       become: yes
 
-    - name: 验证还原文件存在
+    - name: 验证备份目录存在
       fail:
-        msg: "备份文件 {{ backup_dir }}/{{ restore_file }} 不存在"
+        msg: "备份目录 {{ backup_dir }}/{{ restore_file }} 不存在"
       when: not backup_stat.stat.exists
 
     - name: 创建临时目录
@@ -32,58 +32,66 @@
         mode: '0755'
       become: yes
 
-    - name: 解压备份文件
-      unarchive:
-        src: "{{ backup_dir }}/{{ restore_file }}"
-        dest: "{{ temp_dir }}"
-        remote_src: yes
-      become: yes
-
-    - name: 获取解压后的目录名
-      shell: "ls {{ temp_dir }}"
-      register: extracted_dir
-      become: yes
-
     - name: 停止 AWX 服务
       shell: |
-        k3s kubectl scale deployment -n {{ namespace }} awx-web --replicas=0
-        k3s kubectl scale deployment -n {{ namespace }} awx-task --replicas=0
+        k3s kubectl scale deployment -n {{ use_namespace }} awx-web --replicas=0
+        k3s kubectl scale deployment -n {{ use_namespace }} awx-task --replicas=0
       become: yes
 
     - name: 等待 AWX Pod 停止
       shell: |
-        k3s kubectl wait --for=delete pod -l app=awx-web -n {{ namespace }} --timeout=60s
-        k3s kubectl wait --for=delete pod -l app=awx-task -n {{ namespace }} --timeout=60s
+        k3s kubectl wait --for=delete pod -l app=awx-web -n {{ use_namespace }} --timeout=60s
+        k3s kubectl wait --for=delete pod -l app=awx-task -n {{ use_namespace }} --timeout=60s
+      become: yes
+      ignore_errors: yes
+
+    - name: 还原 K8s 资源
+      shell: |
+        # 按顺序还原资源
+        echo "还原 AWX CR..."
+        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/awx-cr.yaml
+        
+        echo "还原 Secrets..."
+        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/secrets.yaml
+        
+        echo "还原 ConfigMaps..."
+        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/configmaps.yaml
+        
+        echo "还原 PVCs..."
+        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/pvcs.yaml
+        
+        echo "还原其他资源..."
+        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/resources.yaml
+      register: restore_result
       become: yes
 
-    - name: 还原数据库
-      shell: |
-        k3s kubectl exec -n {{ namespace }} deployment/awx-postgres -- psql -U postgres < {{ temp_dir }}/{{ extracted_dir.stdout }}/db_dump.sql
-      register: db_result
-      become: yes
+    - name: 显示还原结果
+      debug:
+        var: restore_result.stdout_lines
 
-    - name: 还原资源配置
+    - name: 等待资源就绪
       shell: |
-        k3s kubectl apply -f {{ temp_dir }}/{{ extracted_dir.stdout }}/secrets.yaml
-        k3s kubectl apply -f {{ temp_dir }}/{{ extracted_dir.stdout }}/configmaps.yaml
-        k3s kubectl apply -f {{ temp_dir }}/{{ extracted_dir.stdout }}/pvcs.yaml
-        k3s kubectl apply -f {{ temp_dir }}/{{ extracted_dir.stdout }}/resources.yaml
-      register: resources_result
+        echo "等待 PostgreSQL 就绪..."
+        k3s kubectl wait --for=condition=ready pod -l app=postgresql -n {{ use_namespace }} --timeout=300s
+        
+        echo "等待 Redis 就绪..."
+        k3s kubectl wait --for=condition=ready pod -l app=redis -n {{ use_namespace }} --timeout=300s
       become: yes
+      ignore_errors: yes
 
     - name: 启动 AWX 服务
       shell: |
-        k3s kubectl scale deployment -n {{ namespace }} awx-web --replicas=1
-        k3s kubectl scale deployment -n {{ namespace }} awx-task --replicas=1
+        k3s kubectl scale deployment -n {{ use_namespace }} awx-web --replicas=1
+        k3s kubectl scale deployment -n {{ use_namespace }} awx-task --replicas=1
       become: yes
 
     - name: 等待 AWX Pod 就绪
       shell: |
-        k3s kubectl wait --for=condition=ready pod -l app=awx-web -n {{ namespace }} --timeout=120s
-        k3s kubectl wait --for=condition=ready pod -l app=awx-task -n {{ namespace }} --timeout=120s
+        k3s kubectl wait --for=condition=ready pod -l app=awx-web -n {{ use_namespace }} --timeout=300s
+        k3s kubectl wait --for=condition=ready pod -l app=awx-task -n {{ use_namespace }} --timeout=300s
       become: yes
 
-    - name: 清理临时文件
+    - name: 清理临时目录
       file:
         path: "{{ temp_dir }}"
         state: absent
