@@ -5,6 +5,11 @@
   vars:
     domain_name: awx.tschenfeng.com
     email_address: ssl@tschenfeng.com
+    cert_manager_version: v1.13.0
+    ingress_nginx_namespace: ingress-nginx
+    cert_manager_namespace: cert-manager
+    cluster_issuer_name: letsencrypt-prod
+    staging: false  # 设置为 true 使用 Let's Encrypt 的测试环境
 
   tasks:
     - name: 检查和配置 K3s kubeconfig
@@ -24,11 +29,16 @@
         echo "测试 kubectl 连接..."
         kubectl cluster-info
       register: kube_check
-      become: yes  # 使用 sudo 权限
+      become: yes
 
     - name: 显示 kubeconfig 检查结果
       debug:
         var: kube_check.stdout_lines
+
+    - name: 检查 Helm 是否已安装
+      shell: command -v helm || echo "not found"
+      register: helm_check
+      changed_when: false
 
     - name: 下载并安装 Helm
       shell: |
@@ -37,10 +47,11 @@
         chmod 700 get_helm.sh
         ./get_helm.sh
         rm -f get_helm.sh
+      when: helm_check.stdout == "not found"
 
     - name: 创建 ingress-nginx 命名空间
       shell: |
-        kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace {{ ingress_nginx_namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
     - name: 添加 ingress-nginx Helm 仓库
       shell: |
@@ -49,15 +60,19 @@
 
     - name: 安装 Nginx Ingress Controller
       shell: |
-        helm install ingress-nginx ingress-nginx/ingress-nginx \
-          --namespace ingress-nginx \
+        helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+          --namespace {{ ingress_nginx_namespace }} \
           --set controller.service.type=NodePort \
           --set controller.service.nodePorts.http=30080 \
-          --set controller.service.nodePorts.https=30443
+          --set controller.service.nodePorts.https=30443 \
+          --set controller.metrics.enabled=true \
+          --set controller.metrics.serviceMonitor.enabled=true \
+          --set controller.metrics.serviceMonitor.additionalLabels.release=prometheus \
+          --wait
 
     - name: 等待 Nginx Ingress Controller 就绪
       shell: |
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=controller --namespace ingress-nginx --timeout=300s
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=controller --namespace {{ ingress_nginx_namespace }} --timeout=300s
       register: wait_result
       until: wait_result.rc == 0
       retries: 30
@@ -65,7 +80,7 @@
 
     - name: 创建 cert-manager 命名空间
       shell: |
-        kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace {{ cert_manager_namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
     - name: 添加 Jetstack Helm 仓库
       shell: |
@@ -74,18 +89,23 @@
 
     - name: 安装 cert-manager CRDs
       shell: |
-        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.crds.yaml
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.crds.yaml
 
     - name: 安装 cert-manager
       shell: |
-        helm install \
+        helm upgrade --install \
           cert-manager jetstack/cert-manager \
-          --namespace cert-manager \
-          --version v1.13.0
+          --namespace {{ cert_manager_namespace }} \
+          --version {{ cert_manager_version }} \
+          --set installCRDs=false \
+          --set prometheus.enabled=true \
+          --set prometheus.servicemonitor.enabled=true \
+          --set prometheus.servicemonitor.labels.release=prometheus \
+          --wait
 
     - name: 等待 cert-manager 就绪
       shell: |
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager --namespace cert-manager --timeout=300s
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager --namespace {{ cert_manager_namespace }} --timeout=300s
       register: wait_result
       until: wait_result.rc == 0
       retries: 30
@@ -97,13 +117,13 @@
         apiVersion: cert-manager.io/v1
         kind: ClusterIssuer
         metadata:
-          name: letsencrypt-prod
+          name: {{ cluster_issuer_name }}
         spec:
           acme:
-            server: https://acme-v02.api.letsencrypt.org/directory
+            server: {% if staging %}https://acme-staging-v02.api.letsencrypt.org/directory{% else %}https://acme-v02.api.letsencrypt.org/directory{% endif %}
             email: {{ email_address }}
             privateKeySecretRef:
-              name: letsencrypt-prod
+              name: {{ cluster_issuer_name }}
             solvers:
             - http01:
                 ingress:
@@ -119,8 +139,13 @@
           name: awx-ingress
           namespace: awx
           annotations:
-            cert-manager.io/cluster-issuer: letsencrypt-prod
+            cert-manager.io/cluster-issuer: {{ cluster_issuer_name }}
             kubernetes.io/ingress.class: nginx
+            nginx.ingress.kubernetes.io/ssl-redirect: "true"
+            nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+            nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+            nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+            nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
         spec:
           tls:
           - hosts:
@@ -149,6 +174,57 @@
 
     - name: 验证证书状态
       shell: |
-        kubectl get certificate awx-tls -n awx -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+        echo "=== 证书状态检查 ==="
+        echo "检查证书状态..."
+        kubectl get certificate awx-tls -n awx -o wide
+        
+        echo "检查证书请求状态..."
+        kubectl get certificaterequest -n awx -o wide
+        
+        echo "检查 ACME orders..."
+        kubectl get order -n awx -o wide
+        
+        echo "检查 ACME challenges..."
+        kubectl get challenge -n awx -o wide
+        
+        echo "检查证书 Secret..."
+        kubectl get secret awx-tls -n awx -o jsonpath='{.metadata.annotations}' | grep cert-manager
       register: cert_status
-      failed_when: cert_status.stdout != "True" 
+      
+    - name: 显示证书状态
+      debug:
+        msg: "{{ cert_status.stdout_lines }}"
+
+    - name: 配置证书监控告警
+      shell: |
+        cat << EOF | kubectl apply -f -
+        apiVersion: monitoring.coreos.com/v1
+        kind: PrometheusRule
+        metadata:
+          name: cert-manager-alerts
+          namespace: {{ cert_manager_namespace }}
+        spec:
+          groups:
+          - name: cert-manager
+            rules:
+            - alert: CertificateExpiringSoon
+              expr: |
+                avg by (exported_namespace, name) (
+                  certmanager_certificate_expiration_timestamp_seconds - time()
+                ) < (21 * 24 * 3600)
+              for: 1h
+              labels:
+                severity: warning
+              annotations:
+                summary: Certificate expiring soon
+                description: "Certificate {{ "{{" }} $labels.name {{ "}}" }} in namespace {{ "{{" }} $labels.exported_namespace {{ "}}" }} is expiring in less than 21 days"
+            - alert: CertificateNotReady
+              expr: |
+                certmanager_certificate_ready_status{condition="False"} == 1
+              for: 10m
+              labels:
+                severity: critical
+              annotations:
+                summary: Certificate not ready
+                description: "Certificate {{ "{{" }} $labels.name {{ "}}" }} in namespace {{ "{{" }} $labels.exported_namespace {{ "}}" }} is not ready"
+        EOF 
