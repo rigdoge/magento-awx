@@ -5,17 +5,53 @@
   vars:
     backup_dir: "/backup/awx"
     timestamp: "{{ ansible_date_time.date }}"
-    awx_cli: "/usr/local/bin/awx"
+    awx_cli: "/usr/bin/awx"
     awx_host: "http://localhost"
     awx_username: "admin"
     awx_password: "{{ lookup('env', 'AWX_PASSWORD') }}"
+    pg_container: "awx_postgres"
+    pg_database: "awx"
   
   tasks:
+    - name: 检查 AWX CLI 是否存在
+      stat:
+        path: "{{ awx_cli }}"
+      register: awx_cli_stat
+      become: yes
+
+    - name: 如果找不到 AWX CLI，尝试安装
+      when: not awx_cli_stat.stat.exists
+      block:
+        - name: 安装 Python3 pip
+          apt:
+            name: python3-pip
+            state: present
+          become: yes
+
+        - name: 安装 AWX CLI
+          pip:
+            name: awxkit
+            state: present
+          become: yes
+
     - name: 创建备份目录
       file:
         path: "{{ backup_dir }}/{{ timestamp }}"
         state: directory
         mode: '0755'
+      become: yes
+
+    - name: 备份 PostgreSQL 数据库
+      shell: |
+        k3s kubectl exec -n awx {{ pg_container }} -- pg_dump -U awx {{ pg_database }} > {{ backup_dir }}/{{ timestamp }}/awx_db.sql
+      register: pg_result
+      become: yes
+
+    - name: 备份 AWX 配置文件
+      shell: |
+        k3s kubectl cp awx/{{ pg_container }}:/var/lib/postgresql/data/postgresql.conf {{ backup_dir }}/{{ timestamp }}/postgresql.conf
+        k3s kubectl cp awx/{{ pg_container }}:/var/lib/postgresql/data/pg_hba.conf {{ backup_dir }}/{{ timestamp }}/pg_hba.conf
+      register: pg_conf_result
       become: yes
 
     - name: 备份组织配置
