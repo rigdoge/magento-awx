@@ -4,14 +4,14 @@
   gather_facts: yes
   vars:
     backup_dir: "/backup/awx"
-    restore_file: "{{ backup_timestamp | default('') }}"  # 通过 -e backup_timestamp=YYYYMMDD_HHMMSS 指定要还原的备份
+    restore_file: "{{ backup_timestamp | default('') }}"  # 通过 -e backup_timestamp=YYYYMMDDHHMMSS 指定要还原的备份
     temp_dir: "/tmp/awx-restore"
     use_namespace: "awx"
   
   tasks:
     - name: 检查还原时间戳参数
       fail:
-        msg: "请通过 -e backup_timestamp=YYYYMMDD_HHMMSS 指定要还原的备份时间戳，例如: -e backup_timestamp=20240326_143022"
+        msg: "请通过 -e backup_timestamp=YYYYMMDDHHMMSS 指定要还原的备份时间戳，例如: -e backup_timestamp=20240326143022"
       when: restore_file == ''
 
     - name: 检查备份文件是否存在
