@@ -1,0 +1,154 @@
+---
+- name: 安装 Redis 7.2
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('default') }}"
+    use_memory: "{{ memory | default('1Gi') }}"
+    use_nodeport: "{{ nodeport | default('30379') }}"
+  tasks:
+    - name: 创建命名空间
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          echo "=== 创建命名空间 {{ use_namespace }} ==="
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+      register: namespace_result
+
+    - name: 创建 Redis 配置
+      copy:
+        dest: /tmp/redis-config.yaml
+        content: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: redis-config
+            namespace: {{ use_namespace }}
+          data:
+            redis.conf: |
+              # 基础配置
+              port 6379
+              bind 0.0.0.0
+              protected-mode no
+              
+              # 内存配置
+              maxmemory {{ use_memory }}
+              maxmemory-policy allkeys-lru
+              
+              # 持久化配置
+              save 900 1
+              save 300 10
+              save 60 10000
+              
+              # 数据库配置
+              databases 16
+              
+              # 连接配置
+              timeout 0
+              tcp-keepalive 300
+              
+              # 日志配置
+              loglevel notice
+              
+              # 安全配置
+              rename-command FLUSHALL ""
+              rename-command FLUSHDB ""
+              rename-command DEBUG ""
+
+    - name: 创建 Redis 部署
+      copy:
+        dest: /tmp/redis.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: redis
+            namespace: {{ use_namespace }}
+            labels:
+              app: redis
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: redis
+            template:
+              metadata:
+                labels:
+                  app: redis
+              spec:
+                containers:
+                - name: redis
+                  image: redis:7.2
+                  args: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+                  ports:
+                  - containerPort: 6379
+                  resources:
+                    requests:
+                      memory: {{ use_memory }}
+                      cpu: "0.5"
+                    limits:
+                      memory: {{ use_memory }}
+                      cpu: "1"
+                  volumeMounts:
+                  - name: redis-config
+                    mountPath: /usr/local/etc/redis/redis.conf
+                    subPath: redis.conf
+                  - name: redis-data
+                    mountPath: /data
+                  livenessProbe:
+                    tcpSocket:
+                      port: 6379
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                  readinessProbe:
+                    tcpSocket:
+                      port: 6379
+                    initialDelaySeconds: 5
+                    periodSeconds: 10
+                volumes:
+                - name: redis-config
+                  configMap:
+                    name: redis-config
+                - name: redis-data
+                  persistentVolumeClaim:
+                    claimName: redis-data
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: redis
+            namespace: {{ use_namespace }}
+            labels:
+              app: redis
+          spec:
+            type: NodePort
+            ports:
+            - port: 6379
+              targetPort: 6379
+              nodePort: {{ use_nodeport }}
+            selector:
+              app: redis
+          ---
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: redis-data
+            namespace: {{ use_namespace }}
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Gi
+
+    - name: 应用 Redis 配置
+      shell: |
+        echo "=== 应用 Redis 配置 ==="
+        /usr/local/bin/k3s kubectl apply -f /tmp/redis-config.yaml -f /tmp/redis.yaml
+      register: apply_result
+
+    - name: 等待 Pod 创建完成
+      shell: |
+        echo "=== 等待 Pod 创建完成 ==="
+        /usr/local/bin/k3s kubectl wait --for=condition=Ready pod -l app=redis -n {{ use_namespace }} --timeout=300s
+      register: wait_result 
