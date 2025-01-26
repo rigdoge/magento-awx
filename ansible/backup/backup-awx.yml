@@ -1,7 +1,6 @@
 ---
 - name: 备份 AWX 配置
-  hosts: localhost
-  connection: local
+  hosts: KS-1
   gather_facts: yes
   vars:
     backup_dir: "/backup/awx"
@@ -14,43 +13,52 @@
         path: "{{ backup_dir }}/{{ timestamp }}"
         state: directory
         mode: '0755'
+      become: yes
 
     - name: 备份组织配置
       shell: |
         {{ awx_cli }} organization list --format json > {{ backup_dir }}/{{ timestamp }}/organizations.json
       register: org_result
+      become: yes
 
     - name: 备份项目配置
       shell: |
         {{ awx_cli }} project list --format json > {{ backup_dir }}/{{ timestamp }}/projects.json
       register: proj_result
+      become: yes
 
     - name: 备份模板配置
       shell: |
         {{ awx_cli }} job_template list --format json > {{ backup_dir }}/{{ timestamp }}/templates.json
       register: temp_result
+      become: yes
 
     - name: 备份清单配置
       shell: |
         {{ awx_cli }} inventory list --format json > {{ backup_dir }}/{{ timestamp }}/inventories.json
       register: inv_result
+      become: yes
 
     - name: 备份凭据配置
       shell: |
         {{ awx_cli }} credential list --format json > {{ backup_dir }}/{{ timestamp }}/credentials.json
       register: cred_result
+      become: yes
 
     - name: 压缩备份文件
       shell: |
         cd {{ backup_dir }} && tar -czf awx-backup-{{ timestamp }}.tar.gz {{ timestamp }}
       args:
         warn: false
+      become: yes
 
     - name: 清理临时文件
       file:
         path: "{{ backup_dir }}/{{ timestamp }}"
         state: absent
+      become: yes
 
     - name: 删除超过 7 天的备份
       shell: |
-        find {{ backup_dir }} -name "awx-backup-*.tar.gz" -mtime +7 -delete 
+        find {{ backup_dir }} -name "awx-backup-*.tar.gz" -mtime +7 -delete
+      become: yes 
