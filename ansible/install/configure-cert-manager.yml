@@ -58,7 +58,7 @@
           spec:
             acme:
               email: {{ email_address }}
-              server: https://acme-v02.api.letsencrypt.org/directory
+              server: "{% if staging %}https://acme-staging-v02.api.letsencrypt.org/directory{% else %}https://acme-v02.api.letsencrypt.org/directory{% endif %}"
               privateKeySecretRef:
                 name: letsencrypt-prod
               solvers:
