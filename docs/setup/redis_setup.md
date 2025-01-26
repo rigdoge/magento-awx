@@ -196,4 +196,43 @@ redis-cli -h redis -p 6379 INFO keyspace
 ### 8.3 监控建议
 - 监控 StatefulSet 状态
 - 检查 PVC 状态
-- 观察 Pod 事件 
+- 观察 Pod 事件
+
+## 9. 完全卸载说明
+
+### 9.1 使用脚本卸载
+```bash
+# 使用卸载脚本（推荐）
+ansible-playbook ansible/install/install-redis-statefulset.yml \
+  -e "namespace=magento" \
+  -e "action=uninstall"
+```
+
+### 9.2 手动卸载步骤
+如果脚本卸载失败，可以按以下顺序手动删除：
+
+```bash
+# 1. 删除 StatefulSet
+kubectl delete statefulset redis -n magento
+
+# 2. 删除 Service
+kubectl delete svc redis -n magento
+
+# 3. 删除 ConfigMap
+kubectl delete configmap redis-config -n magento
+
+# 4. 删除 PVC（注意：这将永久删除数据）
+kubectl delete pvc redis-data-redis-0 -n magento
+
+# 5. 检查是否还有遗留资源
+kubectl get all,pvc,configmap -l app=redis -n magento
+```
+
+### 9.3 注意事项
+1. PVC 删除后数据将永久丢失，请确保数据已备份
+2. 如果要保留数据，可以不删除 PVC
+3. 删除 PVC 前请确保相关的 Pod 已经被删除
+4. 如果 PVC 处于 Terminating 状态，可能需要强制删除：
+   ```bash
+   kubectl patch pvc redis-data-redis-0 -n magento -p '{"metadata":{"finalizers":null}}'
+   ``` 
