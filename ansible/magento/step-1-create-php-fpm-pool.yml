@@ -25,7 +25,7 @@
             name: "{{ site_name }}-php-fpm-pool"
             namespace: "{{ php_fpm_namespace }}"
           data:
-            "{{ site_name }}.conf": |
+            pool.conf: |
               [{{ site_name }}]
               user = www-data
               group = www-data
@@ -90,7 +90,7 @@
                   volumeMounts:
                   - name: "{{ site_name }}-pool-config"
                     mountPath: "/usr/local/etc/php-fpm.d/{{ site_name }}.conf"
-                    subPath: "{{ site_name }}.conf"
+                    subPath: pool.conf
                 volumes:
                 - name: "{{ site_name }}-pool-config"
                   configMap:
