@@ -23,8 +23,8 @@
             name: percona
             namespace: {{ use_namespace }}
           type: Opaque
-          data:
-            root-password: {{ mysql_root_password | b64encode }}
+          stringData:
+            root-password: {{ mysql_root_password }}
 
     - name: 应用 Secret
       command: "{{ k3s_bin }} kubectl apply -f /tmp/secret.yaml"
