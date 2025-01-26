@@ -8,12 +8,7 @@
   
   tasks:
     - name: 创建临时 Pod
-      command: >
-        {{ k3s_bin }} kubectl run xtrabackup-test 
-        --image=percona/percona-xtrabackup:8.0 
-        --restart=Never 
-        -n {{ use_namespace }}
-        -- sleep infinity
+      command: "{{ k3s_bin }} kubectl run xtrabackup-test --image=percona/percona-xtrabackup:8.0 --restart=Never -n {{ use_namespace }} -- sleep infinity"
       register: pod_result
       ignore_errors: yes
 
@@ -22,7 +17,7 @@
         var: pod_result.stdout_lines
 
     - name: 等待 Pod 就绪
-      command: "{{ k3s_bin }} kubectl wait --for=condition=Ready pod/xtrabackup-test -n {{ use_namespace }} --timeout=60s"
+      command: "{{ k3s_bin }} kubectl wait --for=condition=ready pod/xtrabackup-test -n {{ use_namespace }} --timeout=60s"
       register: wait_result
 
     - name: 显示等待结果
@@ -30,7 +25,7 @@
         var: wait_result.stdout_lines
 
     - name: 检查 xtrabackup 版本
-      command: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- xtrabackup --version 2>&1 || true"
+      shell: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- xtrabackup --version 2>&1 || true"
       register: version_result
 
     - name: 显示版本信息
@@ -38,7 +33,7 @@
         var: version_result.stdout_lines
 
     - name: 检查 xtrabackup 帮助信息
-      command: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- xtrabackup --help 2>&1 || true"
+      shell: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- xtrabackup --help 2>&1 || true"
       register: help_result
 
     - name: 显示帮助信息
@@ -46,12 +41,12 @@
         var: help_result.stdout_lines
 
     - name: 检查系统信息
-      command: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- cat /etc/os-release"
-      register: os_result
+      shell: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- cat /etc/os-release 2>&1 || true"
+      register: system_result
 
     - name: 显示系统信息
       debug:
-        var: os_result.stdout_lines
+        var: system_result.stdout_lines
 
     - name: 删除测试 Pod
       command: "{{ k3s_bin }} kubectl delete pod xtrabackup-test -n {{ use_namespace }}"

@@ -1,6 +1,6 @@
 ---
 - name: 卸载 Percona XtraBackup
-  hosts: all
+  hosts: KS-1
   gather_facts: no
   vars:
     use_namespace: "{{ namespace | default('magento') }}"
