@@ -92,6 +92,24 @@
     - name: 应用 AWX Ingress
       shell: kubectl apply -f /tmp/awx-ingress.yaml
 
+    - name: 检查初始证书状态
+      shell: |
+        echo "=== 初始证书状态检查 ==="
+        echo "检查 ClusterIssuer 状态..."
+        kubectl get clusterissuer {{ cluster_issuer_name }} -o wide
+        
+        echo "检查 Ingress 配置..."
+        kubectl get ingress -n awx -o wide
+        
+        echo "检查证书申请状态..."
+        kubectl get certificate,certificaterequest,order,challenge -n awx
+      register: initial_status
+      ignore_errors: yes
+
+    - name: 显示初始状态
+      debug:
+        msg: "{{ initial_status.stdout_lines }}"
+
     - name: 等待证书就绪
       shell: |
         kubectl wait --for=condition=ready certificate awx-tls -n awx --timeout=300s
