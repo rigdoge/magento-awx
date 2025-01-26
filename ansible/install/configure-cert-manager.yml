@@ -7,6 +7,7 @@
     email_address: ssl@tschenfeng.com
     cluster_issuer_name: letsencrypt-prod
     staging: true   # 使用 Let's Encrypt 测试环境，避免触发生产环境速率限制
+    cert_manager_namespace: cert-manager
 
   tasks:
     - name: 检查和配置 K3s kubeconfig
@@ -16,7 +17,7 @@
           echo "找到 K3s kubeconfig"
           mkdir -p ~/.kube
           cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-          chmod 644 ~/.kube/config
+          chmod 600 ~/.kube/config
           echo "已复制 kubeconfig 到 ~/.kube/config"
         else
           echo "未找到 K3s kubeconfig"
@@ -149,34 +150,46 @@
 
     - name: 等待证书就绪
       shell: |
-        kubectl wait --for=condition=ready certificate awx-tls -n awx --timeout=300s
+        echo "开始等待证书就绪..."
+        
+        # 每 10 秒检查一次证书状态
+        for i in $(seq 1 30); do
+          echo "=== 第 $i 次检查 ==="
+          
+          echo "检查证书状态："
+          kubectl get certificate -n awx awx-tls -o wide
+          
+          echo "检查最新的证书请求："
+          kubectl get certificaterequest -n awx -o wide
+          
+          echo "检查 ACME Challenge："
+          kubectl get challenge -n awx
+          
+          echo "检查 cert-manager 日志："
+          kubectl logs -n cert-manager -l app=cert-manager --tail=20
+          
+          if kubectl get certificate -n awx awx-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q "True"; then
+            echo "证书已就绪！"
+            exit 0
+          fi
+          
+          echo "证书未就绪，等待 10 秒后重试..."
+          sleep 10
+        done
+        
+        echo "证书等待超时！"
+        exit 1
       register: cert_wait_result
-      until: cert_wait_result.rc == 0
-      retries: 30
-      delay: 10
+      ignore_errors: yes
 
-    - name: 验证证书状态
-      shell: |
-        echo "=== 证书状态检查 ==="
-        echo "检查证书状态..."
-        kubectl get certificate awx-tls -n awx -o wide
-        
-        echo "检查证书请求状态..."
-        kubectl get certificaterequest -n awx -o wide
-        
-        echo "检查 ACME orders..."
-        kubectl get order -n awx -o wide
-        
-        echo "检查 ACME challenges..."
-        kubectl get challenge -n awx -o wide
-        
-        echo "检查证书 Secret..."
-        kubectl get secret awx-tls -n awx -o jsonpath='{.metadata.annotations}' | grep cert-manager
-      register: cert_status
-      
     - name: 显示证书状态
       debug:
-        msg: "{{ cert_status.stdout_lines }}"
+        msg: "{{ cert_wait_result.stdout_lines }}"
+
+    - name: 检查是否成功
+      fail:
+        msg: "证书申请失败，请检查日志了解详细信息"
+      when: cert_wait_result.rc != 0
 
     - name: 显示配置完成信息
       debug:
