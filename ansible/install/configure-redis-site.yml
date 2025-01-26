@@ -4,77 +4,84 @@
   gather_facts: no
   vars:
     use_namespace: "{{ namespace | default('default') }}"
-    use_site_name: "{{ site_name | mandatory }}"  # 站点名称是必需的
-    use_db_offset: "{{ db_offset | default('0') }}"  # 数据库索引偏移量
+    site_name: "{{ site | mandatory }}"  # 必须提供站点名称
+    db_offset: "{{ offset | default(0) | int }}"  # 数据库偏移量，默认从 0 开始
   tasks:
-    - name: 创建站点 Redis 配置
-      copy:
-        dest: /tmp/{{ use_site_name }}-redis-config.yaml
-        content: |
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: {{ use_site_name }}-redis-config
-            namespace: {{ use_namespace }}
-          data:
-            redis-site.conf: |
-              # 站点 Redis 配置
-              # 默认缓存使用 DB: base_offset + 0
-              # 页面缓存使用 DB: base_offset + 1
-              # 会话存储使用 DB: base_offset + 2
-              
-              # 数据库配置
-              databases {{ use_db_offset | int + 3 }}
-              
-              # 缓存配置
-              maxmemory-policy allkeys-lru
-              
-              # 持久化配置
-              save 900 1
-              save 300 10
-              save 60 10000
-
-    - name: 应用站点 Redis 配置
-      shell: |
-        echo "=== 更新 {{ use_site_name }} 的 Redis 配置 ==="
-        /usr/local/bin/k3s kubectl apply -f /tmp/{{ use_site_name }}-redis-config.yaml -n {{ use_namespace }}
-      register: apply_result
-
-    - name: 创建 Redis 数据库初始化脚本
-      copy:
-        dest: /tmp/{{ use_site_name }}-redis-init.sh
-        mode: '0755'
-        content: |
-          #!/bin/bash
-          # Redis 数据库初始化脚本
-          
-          # 计算数据库索引
-          DEFAULT_CACHE_DB=$(( {{ use_db_offset }} + 0 ))
-          PAGE_CACHE_DB=$(( {{ use_db_offset }} + 1 ))
-          SESSION_DB=$(( {{ use_db_offset }} + 2 ))
-          
-          # 清理数据库
-          redis-cli -h redis -p 6379 -n $DEFAULT_CACHE_DB FLUSHDB
-          redis-cli -h redis -p 6379 -n $PAGE_CACHE_DB FLUSHDB
-          redis-cli -h redis -p 6379 -n $SESSION_DB FLUSHDB
-          
-          # 设置数据库说明
-          redis-cli -h redis -p 6379 -n $DEFAULT_CACHE_DB SET db_info "{{ use_site_name }} - Default Cache"
-          redis-cli -h redis -p 6379 -n $PAGE_CACHE_DB SET db_info "{{ use_site_name }} - Page Cache"
-          redis-cli -h redis -p 6379 -n $SESSION_DB SET db_info "{{ use_site_name }} - Session Storage"
-
-    - name: 执行 Redis 数据库初始化
-      shell: |
-        echo "=== 初始化 {{ use_site_name }} 的 Redis 数据库 ==="
-        /usr/local/bin/k3s kubectl cp /tmp/{{ use_site_name }}-redis-init.sh {{ use_namespace }}/$(kubectl get pod -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].metadata.name}'):/tmp/
-        /usr/local/bin/k3s kubectl exec -n {{ use_namespace }} -l app=redis -- /tmp/{{ use_site_name }}-redis-init.sh
-      register: init_result
-
-    - name: 输出 Redis 配置信息
+    - name: 显示 Redis 数据库分配
       debug:
         msg: |
-          Redis 配置完成：
-          站点名称: {{ use_site_name }}
-          默认缓存 DB: {{ use_db_offset | int + 0 }}
-          页面缓存 DB: {{ use_db_offset | int + 1 }}
-          会话存储 DB: {{ use_db_offset | int + 2 }} 
+          站点: {{ site_name }}
+          数据库分配:
+            - 默认缓存: {{ db_offset }}
+            - 页面缓存: {{ db_offset + 1 }}
+            - 会话存储: {{ db_offset + 2 }}
+
+    - name: 检查 Redis 是否运行
+      shell: |
+        echo "=== 检查 Redis 状态 ==="
+        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].metadata.name}')
+        if [ -z "$POD_NAME" ]; then
+          echo "错误: Redis Pod 不存在"
+          exit 1
+        fi
+        
+        POD_STATUS=$(/usr/local/bin/k3s kubectl get pod $POD_NAME -n {{ use_namespace }} -o jsonpath='{.status.phase}')
+        if [ "$POD_STATUS" != "Running" ]; then
+          echo "错误: Redis Pod 未运行，状态: $POD_STATUS"
+          exit 1
+        fi
+        
+        echo "Redis 运行正常: $POD_NAME"
+      register: redis_status
+
+    - name: 显示 Redis 状态
+      debug:
+        var: redis_status.stdout_lines
+
+    - name: 初始化数据库
+      shell: |
+        echo "=== 初始化数据库 ==="
+        POD_NAME=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].metadata.name}')
+        
+        # 清理数据库
+        echo "清理数据库 {{ db_offset }}-{{ db_offset + 2 }}..."
+        for db in $(seq {{ db_offset }} {{ db_offset + 2 }}); do
+          echo "清理数据库 $db"
+          /usr/local/bin/k3s kubectl exec -n {{ use_namespace }} $POD_NAME -- redis-cli select $db
+          /usr/local/bin/k3s kubectl exec -n {{ use_namespace }} $POD_NAME -- redis-cli flushdb
+        done
+        
+        echo "数据库初始化完成"
+      register: init_result
+
+    - name: 显示初始化结果
+      debug:
+        var: init_result.stdout_lines
+
+    - name: 创建数据库使用说明
+      copy:
+        dest: "/tmp/redis-{{ site_name }}.txt"
+        content: |
+          Redis 数据库分配 - {{ site_name }}
+          ============================
+          
+          默认缓存: 数据库 {{ db_offset }}
+          页面缓存: 数据库 {{ db_offset + 1 }}
+          会话存储: 数据库 {{ db_offset + 2 }}
+          
+          连接信息:
+          - 主机: redis.{{ use_namespace }}.svc.cluster.local
+          - 端口: 6379
+          - NodePort: 30379
+          
+          示例配置:
+          ```xml
+          <cache>
+             <backend>Redis</backend>
+             <backend_options>
+                 <server>redis.{{ use_namespace }}.svc.cluster.local</server>
+                 <port>6379</port>
+                 <database>{{ db_offset }}</database>
+             </backend_options>
+          </cache>
+          ``` 
