@@ -51,6 +51,14 @@
               php_value[realpath_cache_size] = 10M
               php_value[realpath_cache_ttl] = 7200
 
+    - name: 获取当前 PHP-FPM Deployment
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: php-fpm
+        namespace: "{{ php_fpm_namespace }}"
+      register: current_deployment
+
     - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
       kubernetes.core.k8s:
         state: present
@@ -62,9 +70,12 @@
             namespace: "{{ php_fpm_namespace }}"
           spec:
             template:
+              metadata:
+                labels: "{{ current_deployment.resources[0].spec.template.metadata.labels }}"
               spec:
                 containers:
                 - name: php-fpm
+                  image: "{{ current_deployment.resources[0].spec.template.spec.containers[0].image }}"
                   volumeMounts:
                   - name: "{{ site_name }}-pool-config"
                     mountPath: "/usr/local/etc/php-fpm.d/{{ site_name }}.conf"
