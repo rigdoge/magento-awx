@@ -1,0 +1,133 @@
+---
+- name: 安装 Varnish 7.5 基础环境
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('default') }}"
+    use_nodeport: "{{ nodeport | default('30180') }}"
+    use_memory: "{{ memory | default('1G') }}"
+  tasks:
+    - name: 创建命名空间
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          echo "=== 创建命名空间 {{ use_namespace }} ==="
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+      register: namespace_result
+
+    - name: 创建 Varnish 基础配置
+      copy:
+        dest: /tmp/varnish-base.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: varnish
+            namespace: {{ use_namespace }}
+            labels:
+              app: varnish
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: varnish
+            template:
+              metadata:
+                labels:
+                  app: varnish
+              spec:
+                containers:
+                - name: varnish
+                  image: varnish:7.5
+                  args:
+                    - "-F"
+                    - "-f"
+                    - "/etc/varnish/default.vcl"
+                    - "-s"
+                    - "malloc,{{ use_memory }}"
+                    - "-p"
+                    - "default_ttl=3600"
+                  ports:
+                  - containerPort: 80
+                  volumeMounts:
+                  - name: varnish-config
+                    mountPath: /etc/varnish/default.vcl
+                    subPath: default.vcl
+                  readinessProbe:
+                    tcpSocket:
+                      port: 80
+                    initialDelaySeconds: 5
+                    periodSeconds: 10
+                  livenessProbe:
+                    tcpSocket:
+                      port: 80
+                    initialDelaySeconds: 15
+                    periodSeconds: 20
+                volumes:
+                - name: varnish-config
+                  configMap:
+                    name: varnish-config
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: varnish
+            namespace: {{ use_namespace }}
+            labels:
+              app: varnish
+          spec:
+            type: NodePort
+            ports:
+            - port: 80
+              targetPort: 80
+              nodePort: {{ use_nodeport }}
+            selector:
+              app: varnish
+          ---
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: varnish-config
+            namespace: {{ use_namespace }}
+          data:
+            default.vcl: |
+              vcl 4.1;
+              
+              # 默认后端配置（空配置，等待站点配置添加）
+              backend default {
+                  .host = "localhost";
+                  .port = "80";
+              }
+              
+              sub vcl_recv {
+                  return (pass);
+              }
+
+    - name: 清理旧的部署
+      shell: |
+        echo "=== 清理旧的部署 ==="
+        /usr/local/bin/k3s kubectl delete -f /tmp/varnish-base.yaml || true
+        echo "等待资源清理完成..."
+        sleep 5
+      register: cleanup_result
+
+    - name: 应用 Varnish 基础配置
+      shell: |
+        echo "=== 开始部署 Varnish ==="
+        /usr/local/bin/k3s kubectl apply -f /tmp/varnish-base.yaml
+      register: apply_result
+
+    - name: 等待 Pod 创建
+      shell: |
+        for i in $(seq 1 30); do
+          echo "检查 Pod 创建进度... $i/30"
+          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=varnish 2>/dev/null | grep -q varnish; then
+            echo "Pod 已创建"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "错误: Pod 未能成功创建"
+        exit 1
+      register: pod_creation_result
+... 

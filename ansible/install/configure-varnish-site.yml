@@ -1,0 +1,126 @@
+---
+- name: 配置 Varnish 站点
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('default') }}"
+    use_backend_host: "{{ backend | default('nginx') }}"
+    use_backend_port: "{{ backend_port | default('80') }}"
+    use_site_name: "{{ site_name | mandatory }}"  # 站点名称是必需的
+  tasks:
+    - name: 创建 VCL 配置
+      copy:
+        dest: /tmp/{{ use_site_name }}-vcl.yaml
+        content: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: varnish-config
+            namespace: {{ use_namespace }}
+          data:
+            default.vcl: |
+              vcl 4.1;
+              
+              # 默认后端配置
+              backend default {
+                  .host = "{{ use_backend_host }}";
+                  .port = "{{ use_backend_port }}";
+                  .probe = {
+                      .url = "/health_check.php";
+                      .timeout = 2s;
+                      .interval = 5s;
+                      .window = 10;
+                      .threshold = 5;
+                  }
+              }
+              
+              # 接收请求
+              sub vcl_recv {
+                  # 健康检查
+                  if (req.url ~ "^/health_check\.php$") {
+                      return (pass);
+                  }
+              
+                  # 不缓存 POST 请求
+                  if (req.method == "POST") {
+                      return (pass);
+                  }
+              
+                  # 不缓存认证请求
+                  if (req.http.Authorization) {
+                      return (pass);
+                  }
+              
+                  # 标准缓存规则
+                  if (req.method != "GET" && req.method != "HEAD") {
+                      return (pass);
+                  }
+              
+                  # 去除不必要的 Cookie
+                  if (req.url ~ "\.(css|js|jpg|jpeg|png|gif|ico|woff|ttf|eot|svg)$") {
+                      unset req.http.Cookie;
+                  }
+              
+                  return (hash);
+              }
+              
+              # 缓存命中处理
+              sub vcl_hit {
+                  if (obj.ttl >= 0s) {
+                      return (deliver);
+                  }
+                  return (pass);
+              }
+              
+              # 缓存未命中处理
+              sub vcl_miss {
+                  return (fetch);
+              }
+              
+              # 响应处理
+              sub vcl_backend_response {
+                  # 设置缓存时间
+                  if (bereq.url ~ "\.(css|js)$") {
+                      set beresp.ttl = 24h;
+                  } elsif (bereq.url ~ "\.(jpg|jpeg|png|gif|ico)$") {
+                      set beresp.ttl = 48h;
+                  } else {
+                      set beresp.ttl = 1h;
+                  }
+              
+                  # 去除 Set-Cookie 头
+                  if (bereq.url ~ "\.(css|js|jpg|jpeg|png|gif|ico|woff|ttf|eot|svg)$") {
+                      unset beresp.http.Set-Cookie;
+                  }
+              
+                  return (deliver);
+              }
+              
+              # 响应发送
+              sub vcl_deliver {
+                  if (obj.hits > 0) {
+                      set resp.http.X-Cache = "HIT";
+                  } else {
+                      set resp.http.X-Cache = "MISS";
+                  }
+                  set resp.http.X-Cache-Hits = obj.hits;
+                  return (deliver);
+              }
+
+    - name: 应用站点 VCL 配置
+      shell: |
+        echo "=== 更新 {{ use_site_name }} 的 Varnish 配置 ==="
+        /usr/local/bin/k3s kubectl apply -f /tmp/{{ use_site_name }}-vcl.yaml -n {{ use_namespace }}
+      register: apply_result
+
+    - name: 重启 Varnish Pod 以应用新配置
+      shell: |
+        echo "=== 重启 Varnish Pod ==="
+        /usr/local/bin/k3s kubectl rollout restart deployment varnish -n {{ use_namespace }}
+      register: restart_result
+
+    - name: 等待 Pod 重启完成
+      shell: |
+        echo "=== 等待 Pod 重启完成 ==="
+        /usr/local/bin/k3s kubectl rollout status deployment varnish -n {{ use_namespace }}
+      register: rollout_result 
