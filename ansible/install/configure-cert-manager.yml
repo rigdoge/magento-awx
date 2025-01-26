@@ -170,13 +170,16 @@
           echo "=== 第 $i 次检查 ==="
           
           echo "检查证书状态："
-          kubectl get certificate -n awx awx-tls -o wide
+          kubectl get certificate -n awx awx-tls -o yaml
           
           echo "检查最新的证书请求："
-          kubectl get certificaterequest -n awx -o wide
+          kubectl get certificaterequest -n awx -o yaml
           
-          echo "检查 ACME Challenge："
-          kubectl get challenge -n awx
+          echo "检查 ACME Order 和 Challenge："
+          kubectl get order,challenge -n awx -o yaml
+          
+          echo "检查 cert-manager 事件："
+          kubectl get events -n cert-manager --sort-by='.lastTimestamp' | tail -n 20
           
           echo "检查 cert-manager 日志："
           kubectl logs -n cert-manager -l app=cert-manager --tail=20
@@ -191,6 +194,11 @@
         done
         
         echo "证书等待超时！"
+        echo "最终状态："
+        kubectl describe certificate -n awx awx-tls
+        kubectl describe certificaterequest -n awx
+        kubectl describe order -n awx
+        kubectl describe challenge -n awx
         exit 1
       register: cert_wait_result
       ignore_errors: yes
