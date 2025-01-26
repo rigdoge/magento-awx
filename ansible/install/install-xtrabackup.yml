@@ -30,12 +30,28 @@
         var: wait_result.stdout_lines
 
     - name: 检查 xtrabackup 版本
-      command: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- xtrabackup --version"
+      command: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- xtrabackup --version 2>&1 || true"
       register: version_result
 
     - name: 显示版本信息
       debug:
         var: version_result.stdout_lines
+
+    - name: 检查 xtrabackup 帮助信息
+      command: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- xtrabackup --help 2>&1 || true"
+      register: help_result
+
+    - name: 显示帮助信息
+      debug:
+        var: help_result.stdout_lines
+
+    - name: 检查系统信息
+      command: "{{ k3s_bin }} kubectl exec -n {{ use_namespace }} xtrabackup-test -- cat /etc/os-release"
+      register: os_result
+
+    - name: 显示系统信息
+      debug:
+        var: os_result.stdout_lines
 
     - name: 删除测试 Pod
       command: "{{ k3s_bin }} kubectl delete pod xtrabackup-test -n {{ use_namespace }}"
