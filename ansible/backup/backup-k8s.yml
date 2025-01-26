@@ -24,6 +24,16 @@
       register: resources_result
       become: yes
 
+    - name: 显示所有 Pod 标签
+      shell: |
+        k3s kubectl get pods -n {{ namespace }} --show-labels
+      register: pod_labels
+      become: yes
+
+    - name: 显示标签信息
+      debug:
+        var: pod_labels.stdout_lines
+
     - name: 获取 PostgreSQL Pod 名称
       shell: |
         k3s kubectl get pod -n {{ namespace }} -l app=postgres -o jsonpath='{.items[0].metadata.name}'
