@@ -17,99 +17,6 @@
         fi
       register: namespace_result
 
-    - name: 创建 VCL 配置
-      copy:
-        dest: /tmp/default.vcl
-        content: |
-          vcl 4.1;
-          
-          # 默认后端配置
-          backend default {
-              .host = "{{ use_backend_host }}";
-              .port = "{{ use_backend_port }}";
-              .probe = {
-                  .url = "/health_check.php";
-                  .timeout = 2s;
-                  .interval = 5s;
-                  .window = 10;
-                  .threshold = 5;
-              }
-          }
-          
-          # 接收请求
-          sub vcl_recv {
-              # 健康检查
-              if (req.url ~ "^/health_check\.php$") {
-                  return (pass);
-              }
-          
-              # 不缓存 POST 请求
-              if (req.method == "POST") {
-                  return (pass);
-              }
-          
-              # 不缓存认证请求
-              if (req.http.Authorization) {
-                  return (pass);
-              }
-          
-              # 标准缓存规则
-              if (req.method != "GET" && req.method != "HEAD") {
-                  return (pass);
-              }
-          
-              # 去除不必要的 Cookie
-              if (req.url ~ "\.(css|js|jpg|jpeg|png|gif|ico|woff|ttf|eot|svg)$") {
-                  unset req.http.Cookie;
-              }
-          
-              return (hash);
-          }
-          
-          # 缓存命中处理
-          sub vcl_hit {
-              if (obj.ttl >= 0s) {
-                  return (deliver);
-              }
-              return (pass);
-          }
-          
-          # 缓存未命中处理
-          sub vcl_miss {
-              return (fetch);
-          }
-          
-          # 响应处理
-          sub vcl_backend_response {
-              # 设置缓存时间
-              if (bereq.url ~ "\.(css|js)$") {
-                  set beresp.ttl = 24h;
-              } elsif (bereq.url ~ "\.(jpg|jpeg|png|gif|ico)$") {
-                  set beresp.ttl = 48h;
-              } else {
-                  set beresp.ttl = 1h;
-              }
-          
-              # 去除 Set-Cookie 头
-              if (bereq.url ~ "\.(css|js|jpg|jpeg|png|gif|ico|woff|ttf|eot|svg)$") {
-                  unset beresp.http.Set-Cookie;
-              }
-          
-              return (deliver);
-          }
-          
-          # 响应发送
-          sub vcl_deliver {
-              if (obj.hits > 0) {
-                  set resp.http.X-Cache = "HIT";
-              } else {
-                  set resp.http.X-Cache = "MISS";
-              }
-              set resp.http.X-Cache-Hits = obj.hits;
-              return (deliver);
-          }
-      register: vcl_config
-
     - name: 创建 Varnish 配置
       copy:
         dest: /tmp/varnish.yaml
@@ -185,8 +92,94 @@
             name: varnish-config
             namespace: {{ use_namespace }}
           data:
-            default.vcl: |-
-{{ vcl_config.content | indent(14, True) }}
+            default.vcl: |
+              vcl 4.1;
+              
+              # 默认后端配置
+              backend default {
+                  .host = "{{ use_backend_host }}";
+                  .port = "{{ use_backend_port }}";
+                  .probe = {
+                      .url = "/health_check.php";
+                      .timeout = 2s;
+                      .interval = 5s;
+                      .window = 10;
+                      .threshold = 5;
+                  }
+              }
+              
+              # 接收请求
+              sub vcl_recv {
+                  # 健康检查
+                  if (req.url ~ "^/health_check\.php$") {
+                      return (pass);
+                  }
+              
+                  # 不缓存 POST 请求
+                  if (req.method == "POST") {
+                      return (pass);
+                  }
+              
+                  # 不缓存认证请求
+                  if (req.http.Authorization) {
+                      return (pass);
+                  }
+              
+                  # 标准缓存规则
+                  if (req.method != "GET" && req.method != "HEAD") {
+                      return (pass);
+                  }
+              
+                  # 去除不必要的 Cookie
+                  if (req.url ~ "\.(css|js|jpg|jpeg|png|gif|ico|woff|ttf|eot|svg)$") {
+                      unset req.http.Cookie;
+                  }
+              
+                  return (hash);
+              }
+              
+              # 缓存命中处理
+              sub vcl_hit {
+                  if (obj.ttl >= 0s) {
+                      return (deliver);
+                  }
+                  return (pass);
+              }
+              
+              # 缓存未命中处理
+              sub vcl_miss {
+                  return (fetch);
+              }
+              
+              # 响应处理
+              sub vcl_backend_response {
+                  # 设置缓存时间
+                  if (bereq.url ~ "\.(css|js)$") {
+                      set beresp.ttl = 24h;
+                  } elsif (bereq.url ~ "\.(jpg|jpeg|png|gif|ico)$") {
+                      set beresp.ttl = 48h;
+                  } else {
+                      set beresp.ttl = 1h;
+                  }
+              
+                  # 去除 Set-Cookie 头
+                  if (bereq.url ~ "\.(css|js|jpg|jpeg|png|gif|ico|woff|ttf|eot|svg)$") {
+                      unset beresp.http.Set-Cookie;
+                  }
+              
+                  return (deliver);
+              }
+              
+              # 响应发送
+              sub vcl_deliver {
+                  if (obj.hits > 0) {
+                      set resp.http.X-Cache = "HIT";
+                  } else {
+                      set resp.http.X-Cache = "MISS";
+                  }
+                  set resp.http.X-Cache-Hits = obj.hits;
+                  return (deliver);
+              }
 
     - name: 清理旧的部署
       shell: |
