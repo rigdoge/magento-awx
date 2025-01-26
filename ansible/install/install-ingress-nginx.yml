@@ -1,0 +1,128 @@
+---
+- name: 安装 Nginx Ingress Controller
+  hosts: all
+  gather_facts: yes
+  vars:
+    ingress_nginx_namespace: ingress-nginx
+
+  tasks:
+    - name: 检查和配置 K3s kubeconfig
+      shell: |
+        echo "检查 K3s kubeconfig..."
+        if [ -f /etc/rancher/k3s/k3s.yaml ]; then
+          echo "找到 K3s kubeconfig"
+          mkdir -p ~/.kube
+          cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+          chmod 600 ~/.kube/config
+          echo "已复制 kubeconfig 到 ~/.kube/config"
+        else
+          echo "未找到 K3s kubeconfig"
+          exit 1
+        fi
+        
+        echo "测试 kubectl 连接..."
+        kubectl cluster-info
+      register: kube_check
+      become: yes
+
+    - name: 显示 kubeconfig 检查结果
+      debug:
+        var: kube_check.stdout_lines
+
+    - name: 检查 Helm 是否已安装
+      shell: command -v helm || echo "not found"
+      register: helm_check
+      changed_when: false
+
+    - name: 下载并安装 Helm
+      shell: |
+        set -e
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        ./get_helm.sh
+        rm -f get_helm.sh
+      when: helm_check.stdout == "not found"
+
+    - name: 检查端口占用情况
+      shell: |
+        echo "=== 检查端口占用 ==="
+        
+        # 已知的 AWX 端口
+        AWX_HTTP_PORT=30180
+        AWX_HTTPS_PORT=30443
+        
+        # 查找可用的 HTTP 端口（31080-31099 范围）
+        for port in $(seq 31080 31099); do
+          if ! kubectl get svc --all-namespaces -o json | grep -q "\"nodePort\": $port"; then
+            HTTP_PORT=$port
+            break
+          fi
+        done
+        
+        # 查找可用的 HTTPS 端口（31443-31462 范围）
+        for port in $(seq 31443 31462); do
+          if ! kubectl get svc --all-namespaces -o json | grep -q "\"nodePort\": $port"; then
+            HTTPS_PORT=$port
+            break
+          fi
+        done
+        
+        if [ -z "$HTTP_PORT" ] || [ -z "$HTTPS_PORT" ]; then
+          echo "未找到可用端口！"
+          exit 1
+        fi
+        
+        echo "选择的 HTTP 端口: $HTTP_PORT"
+        echo "选择的 HTTPS 端口: $HTTPS_PORT"
+        
+        # 保存端口信息供后续使用
+        echo "http_port=$HTTP_PORT" > /tmp/ingress_ports
+        echo "https_port=$HTTPS_PORT" >> /tmp/ingress_ports
+      register: port_check
+
+    - name: 显示端口检查结果
+      debug:
+        msg: "{{ port_check.stdout_lines }}"
+
+    - name: 读取端口配置
+      shell: cat /tmp/ingress_ports
+      register: ports_file
+
+    - name: 设置端口变量
+      set_fact:
+        http_port: "{{ ports_file.stdout_lines[0] | regex_replace('http_port=', '') }}"
+        https_port: "{{ ports_file.stdout_lines[1] | regex_replace('https_port=', '') }}"
+
+    - name: 创建 ingress-nginx 命名空间
+      shell: |
+        kubectl create namespace {{ ingress_nginx_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: 添加 ingress-nginx Helm 仓库
+      shell: |
+        helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+        helm repo update
+
+    - name: 安装 Nginx Ingress Controller
+      shell: |
+        helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+          --namespace {{ ingress_nginx_namespace }} \
+          --set controller.service.type=NodePort \
+          --set controller.service.nodePorts.http={{ http_port }} \
+          --set controller.service.nodePorts.https={{ https_port }} \
+          --wait
+
+    - name: 等待 Nginx Ingress Controller 就绪
+      shell: |
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=controller --namespace {{ ingress_nginx_namespace }} --timeout=300s
+      register: wait_result
+      until: wait_result.rc == 0
+      retries: 30
+      delay: 10
+
+    - name: 显示安装完成信息
+      debug:
+        msg: |
+          Nginx Ingress Controller 已安装完成！
+          HTTP 端口: {{ http_port }}
+          HTTPS 端口: {{ https_port }}
+          命名空间: {{ ingress_nginx_namespace }} 
