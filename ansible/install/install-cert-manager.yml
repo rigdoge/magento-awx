@@ -72,24 +72,31 @@
       shell: |
         echo "=== 检查端口占用 ==="
         
-        # 检查 HTTP 端口 (30080)
-        if kubectl get svc --all-namespaces -o json | grep -q '"nodePort": 30080'; then
-          HTTP_PORT=$(kubectl get svc --all-namespaces -o json | jq '.items[].spec.ports[] | select(.nodePort) | .nodePort' | sort -n | grep -A1 30080 | tail -n1)
-          if [ -z "$HTTP_PORT" ]; then
-            HTTP_PORT=30081
-          fi
-        else
-          HTTP_PORT=30080
-        fi
+        # 定义已知服务端口
+        declare -A KNOWN_PORTS=(
+          ["awx_http"]="30180"
+          ["awx_https"]="30443"
+        )
         
-        # 检查 HTTPS 端口 (30443)
-        if kubectl get svc --all-namespaces -o json | grep -q '"nodePort": 30443'; then
-          HTTPS_PORT=$(kubectl get svc --all-namespaces -o json | jq '.items[].spec.ports[] | select(.nodePort) | .nodePort' | sort -n | grep -A1 30443 | tail -n1)
-          if [ -z "$HTTPS_PORT" ]; then
-            HTTPS_PORT=30444
+        # 查找可用的 HTTP 端口（31080-31099 范围）
+        for port in {31080..31099}; do
+          if ! kubectl get svc --all-namespaces -o json | grep -q "\"nodePort\": $port"; then
+            HTTP_PORT=$port
+            break
           fi
-        else
-          HTTPS_PORT=30443
+        done
+        
+        # 查找可用的 HTTPS 端口（31443-31462 范围）
+        for port in {31443..31462}; do
+          if ! kubectl get svc --all-namespaces -o json | grep -q "\"nodePort\": $port"; then
+            HTTPS_PORT=$port
+            break
+          fi
+        done
+        
+        if [ -z "$HTTP_PORT" ] || [ -z "$HTTPS_PORT" ]; then
+          echo "未找到可用端口！"
+          exit 1
         fi
         
         echo "选择的 HTTP 端口: $HTTP_PORT"
