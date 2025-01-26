@@ -1,7 +1,6 @@
 ---
 - name: 恢复 AWX 配置
-  hosts: localhost
-  connection: local
+  hosts: KS-1
   gather_facts: yes
   vars:
     backup_dir: "/backup/awx"
@@ -20,44 +19,53 @@
         path: "{{ temp_dir }}"
         state: directory
         mode: '0755'
+      become: yes
 
     - name: 解压备份文件
       unarchive:
         src: "{{ backup_dir }}/{{ backup_file }}"
         dest: "{{ temp_dir }}"
         remote_src: yes
+      become: yes
 
     - name: 获取备份日期
       shell: |
         ls {{ temp_dir }} | head -n 1
       register: backup_date
+      become: yes
 
     - name: 恢复组织配置
       shell: |
         cat {{ temp_dir }}/{{ backup_date.stdout }}/organizations.json | {{ awx_cli }} organization import
       register: org_result
+      become: yes
 
     - name: 恢复项目配置
       shell: |
         cat {{ temp_dir }}/{{ backup_date.stdout }}/projects.json | {{ awx_cli }} project import
       register: proj_result
+      become: yes
 
     - name: 恢复模板配置
       shell: |
         cat {{ temp_dir }}/{{ backup_date.stdout }}/templates.json | {{ awx_cli }} job_template import
       register: temp_result
+      become: yes
 
     - name: 恢复清单配置
       shell: |
         cat {{ temp_dir }}/{{ backup_date.stdout }}/inventories.json | {{ awx_cli }} inventory import
       register: inv_result
+      become: yes
 
     - name: 恢复凭据配置
       shell: |
         cat {{ temp_dir }}/{{ backup_date.stdout }}/credentials.json | {{ awx_cli }} credential import
       register: cred_result
+      become: yes
 
     - name: 清理临时文件
       file:
         path: "{{ temp_dir }}"
-        state: absent 
+        state: absent
+      become: yes 
