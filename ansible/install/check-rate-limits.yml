@@ -1,0 +1,29 @@
+---
+- name: 检查 Let's Encrypt 限制状态
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: 检查 Let's Encrypt 限制状态
+      shell: |
+        echo "=== 检查 Let's Encrypt 限制状态 ==="
+        
+        echo "1. 检查 cert-manager 日志中的限制信息..."
+        kubectl logs -n cert-manager -l app=cert-manager --tail=500 | grep -i "rate limit\|too many\|exceeded\|limit reached"
+        
+        echo "2. 检查失败的证书请求历史..."
+        kubectl get certificaterequest -n awx --sort-by=.metadata.creationTimestamp
+        
+        echo "3. 检查 ACME Orders 历史..."
+        kubectl get orders.acme.cert-manager.io -n awx --sort-by=.metadata.creationTimestamp
+        
+        echo "4. 检查详细的失败原因..."
+        kubectl get challenges.acme.cert-manager.io -n awx -o yaml
+        
+        echo "5. 检查 Events 中的错误信息..."
+        kubectl get events -n awx --sort-by=.lastTimestamp | grep -i "certificate\|acme\|challenge\|error\|fail"
+      register: rate_limit_check
+      ignore_errors: yes
+
+    - name: 显示检查结果
+      debug:
+        msg: "{{ rate_limit_check.stdout_lines }}" 
