@@ -130,4 +130,139 @@ kubectl logs -n magento magento-pod
 
 # 检查配置
 kubectl exec -it -n magento magento-pod -- php bin/magento config:show
-``` 
+```
+
+## 6. 数据库备份策略
+
+### 6.1 XtraBackup 工具
+- **安装理由**：
+  * 支持热备份（在线备份）
+  * 增量备份支持
+  * 并行备份提高效率
+  * 压缩和加密支持
+  * 支持时间点恢复
+
+### 6.2 备份类型
+```bash
+# 完整备份
+kubectl exec -it -n magento percona-0 -- xtrabackup --backup \
+  --target-dir=/backup/full \
+  --user=root \
+  --password=$MYSQL_ROOT_PASSWORD
+
+# 增量备份
+kubectl exec -it -n magento percona-0 -- xtrabackup --backup \
+  --target-dir=/backup/inc1 \
+  --incremental-basedir=/backup/full \
+  --user=root \
+  --password=$MYSQL_ROOT_PASSWORD
+```
+
+### 6.3 备份策略
+1. **定时备份**
+   - 每日凌晨完整备份
+   - 每4小时增量备份
+   - 保留7天的备份历史
+
+2. **备份验证**
+   ```bash
+   # 准备备份
+   kubectl exec -it -n magento percona-0 -- xtrabackup --prepare \
+     --target-dir=/backup/full
+
+   # 验证备份
+   kubectl exec -it -n magento percona-0 -- xtrabackup --check \
+     --target-dir=/backup/full
+   ```
+
+3. **恢复流程**
+   ```bash
+   # 停止数据库
+   kubectl scale statefulset percona --replicas=0 -n magento
+
+   # 恢复数据
+   kubectl exec -it -n magento percona-0 -- xtrabackup --copy-back \
+     --target-dir=/backup/full \
+     --datadir=/var/lib/mysql
+
+   # 启动数据库
+   kubectl scale statefulset percona --replicas=1 -n magento
+   ```
+
+### 6.4 自动化配置
+```yaml
+# ansible/install/install-percona-backup.yml
+---
+- name: 安装 Percona XtraBackup
+  hosts: all
+  tasks:
+    - name: 创建备份 PVC
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: percona-backup
+            namespace: "{{ use_namespace }}"
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 50Gi
+
+    - name: 配置备份 CronJob
+      k8s:
+        state: present
+        definition:
+          apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: percona-backup
+            namespace: "{{ use_namespace }}"
+          spec:
+            schedule: "0 0 * * *"  # 每天凌晨执行
+            jobTemplate:
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: xtrabackup
+                        image: percona/percona-xtrabackup:8.0
+                        command: ["/bin/bash", "-c"]
+                        args:
+                          - |
+                            xtrabackup --backup \
+                              --target-dir=/backup/$(date +%Y%m%d) \
+                              --user=root \
+                              --password=$MYSQL_ROOT_PASSWORD
+                        volumeMounts:
+                          - name: backup
+                            mountPath: /backup
+                    volumes:
+                      - name: backup
+                        persistentVolumeClaim:
+                          claimName: percona-backup
+```
+
+### 6.5 监控和维护
+1. **空间监控**
+   ```bash
+   # 检查备份大小
+   kubectl exec -it -n magento percona-0 -- du -sh /backup/*
+
+   # 清理旧备份
+   kubectl exec -it -n magento percona-0 -- find /backup -mtime +7 -delete
+   ```
+
+2. **备份状态检查**
+   ```bash
+   # 检查最近备份状态
+   kubectl exec -it -n magento percona-0 -- xtrabackup --stats \
+     --target-dir=/backup/$(date +%Y%m%d)
+   ```
+
+3. **告警设置**
+   - 备份失败通知
+   - 空间不足预警
+   - 备份时间异常告警 
