@@ -1,0 +1,17 @@
+---
+- name: 卸载 Percona XtraBackup
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('magento') }}"
+    k3s_bin: "/usr/local/bin/k3s"
+  
+  tasks:
+    - name: 删除测试 Pod
+      command: "{{ k3s_bin }} kubectl delete pod xtrabackup-test -n {{ use_namespace }}"
+      register: delete_result
+      ignore_errors: yes
+
+    - name: 显示删除结果
+      debug:
+        var: delete_result.stdout_lines 
