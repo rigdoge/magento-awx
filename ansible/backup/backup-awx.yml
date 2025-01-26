@@ -1,7 +1,8 @@
 ---
 - name: 备份 AWX 配置
-  hosts: awx
-  gather_facts: no
+  hosts: localhost
+  connection: local
+  gather_facts: yes
   vars:
     backup_dir: "/backup/awx"
     timestamp: "{{ ansible_date_time.date }}"
