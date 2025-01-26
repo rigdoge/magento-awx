@@ -86,73 +86,15 @@
               #!/bin/bash
               set -e
               
-              # 环境变量
-              BACKUP_DIR="/backup"
-              MYSQL_HOST="percona.{{ use_namespace }}.svc.cluster.local"
-              MYSQL_PORT="3306"
-              DATE=$(date +%Y%m%d)
-              FULL_BACKUP_DIR="$BACKUP_DIR/full/$DATE"
-              
-              # 显示环境变量（调试用）
-              echo "使用的密码: $MYSQL_ROOT_PASSWORD"
-              echo "MySQL 主机: $MYSQL_HOST"
-              echo "MySQL 端口: $MYSQL_PORT"
-              echo "备份目录: $FULL_BACKUP_DIR"
-              
-              # 创建备份目录
-              mkdir -p "$FULL_BACKUP_DIR"
-              
-              # 执行完整备份
               echo "开始完整备份..."
-              xtrabackup \
-                --backup \
-                --host="$MYSQL_HOST" \
-                --port="$MYSQL_PORT" \
-                --user=root \
-                --password="$MYSQL_ROOT_PASSWORD" \
-                --target-dir="$FULL_BACKUP_DIR"
-              
-              # 清理旧备份
-              echo "清理旧备份..."
-              find $BACKUP_DIR -type d -mtime +{{ retention_days }} -exec rm -rf {} \;
-              
-              echo "备份完成"
+              xtrabackup --backup --user=root --password=$MYSQL_ROOT_PASSWORD --target-dir=/backup/full
               
             incremental-backup.sh: |
               #!/bin/bash
               set -e
               
-              # 环境变量
-              BACKUP_DIR="/backup"
-              MYSQL_HOST="percona.{{ use_namespace }}.svc.cluster.local"
-              MYSQL_PORT="3306"
-              DATE=$(date +%Y%m%d)
-              TIME=$(date +%H%M)
-              LATEST_FULL=$(ls -t $BACKUP_DIR/full | head -1)
-              INC_BACKUP_DIR="$BACKUP_DIR/inc/$DATE/$TIME"
-              
-              # 显示环境变量（调试用）
-              echo "使用的密码: $MYSQL_ROOT_PASSWORD"
-              echo "MySQL 主机: $MYSQL_HOST"
-              echo "MySQL 端口: $MYSQL_PORT"
-              echo "增量备份目录: $INC_BACKUP_DIR"
-              echo "基础备份目录: $BACKUP_DIR/full/$LATEST_FULL"
-              
-              # 创建备份目录
-              mkdir -p "$INC_BACKUP_DIR"
-              
-              # 执行增量备份
               echo "开始增量备份..."
-              xtrabackup \
-                --backup \
-                --host="$MYSQL_HOST" \
-                --port="$MYSQL_PORT" \
-                --user=root \
-                --password="$MYSQL_ROOT_PASSWORD" \
-                --target-dir="$INC_BACKUP_DIR" \
-                --incremental-basedir="$BACKUP_DIR/full/$LATEST_FULL"
-              
-              echo "增量备份完成"
+              xtrabackup --backup --user=root --password=$MYSQL_ROOT_PASSWORD --target-dir=/backup/inc --incremental-basedir=/backup/full
 
     - name: 应用 ConfigMap
       command: "{{ k3s_bin }} kubectl apply -f /tmp/configmap.yaml"
