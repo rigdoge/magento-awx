@@ -1,0 +1,49 @@
+---
+- name: Uninstall AWX
+  hosts: all
+  become: true
+  tasks:
+    - name: Stop AWX services
+      command: kubectl delete -f awx-operator.yaml
+      args:
+        chdir: "{{ awx_operator_dir | default('/tmp/awx-operator') }}"
+      ignore_errors: yes
+
+    - name: Remove AWX namespace
+      k8s:
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: awx
+      ignore_errors: yes
+
+    - name: Remove AWX operator namespace
+      k8s:
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: awx-operator
+      ignore_errors: yes
+
+    - name: Remove AWX PVC
+      k8s:
+        state: absent
+        api_version: v1
+        kind: PersistentVolumeClaim
+        name: postgres-13-awx-postgres-13
+        namespace: awx
+      ignore_errors: yes
+
+    - name: Remove AWX operator files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /tmp/awx-operator
+        - ~/.awx
+      ignore_errors: yes
+
+    - name: Clean up any remaining AWX resources
+      shell: |
+        kubectl get all -n awx --no-headers | awk '{print $1}' | xargs kubectl delete -n awx
+      ignore_errors: yes 

@@ -1,0 +1,8 @@
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx-demo
+spec:
+  postgres_configuration_secret: awx-demo-postgres-configuration
+  postgres_extra_configuration:
+    sslmode: disable 

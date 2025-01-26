@@ -1,0 +1,14 @@
+---
+- name: Reset AWX
+  hosts: all
+  become: true
+  tasks:
+    - name: Include uninstall AWX playbook
+      ansible.builtin.import_playbook: uninstall/uninstall-awx.yml
+
+    - name: Wait for resources to be cleaned up
+      pause:
+        seconds: 30
+
+    - name: Include install AWX playbook
+      ansible.builtin.import_playbook: install/install-awx.yml 

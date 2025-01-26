@@ -1,0 +1,78 @@
+---
+- name: Install AWX
+  hosts: all
+  become: true
+  vars:
+    awx_operator_version: "2.10.0"
+    awx_version: "23.5.1"
+  tasks:
+    - name: Create AWX operator directory
+      file:
+        path: /tmp/awx-operator
+        state: directory
+        mode: '0755'
+
+    - name: Download AWX operator
+      get_url:
+        url: "https://raw.githubusercontent.com/ansible/awx-operator/{{ awx_operator_version }}/deploy/awx-operator.yaml"
+        dest: /tmp/awx-operator/awx-operator.yaml
+        mode: '0644'
+
+    - name: Create AWX operator namespace
+      k8s:
+        name: awx-operator
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Deploy AWX operator
+      k8s:
+        state: present
+        src: /tmp/awx-operator/awx-operator.yaml
+
+    - name: Wait for AWX operator to be ready
+      k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: awx-operator-controller-manager
+        namespace: awx-operator
+      register: awx_operator_status
+      until: awx_operator_status.resources[0].status.readyReplicas is defined and awx_operator_status.resources[0].status.readyReplicas == 1
+      retries: 30
+      delay: 10
+
+    - name: Create AWX namespace
+      k8s:
+        name: awx
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create AWX instance
+      k8s:
+        state: present
+        definition:
+          apiVersion: awx.ansible.com/v1beta1
+          kind: AWX
+          metadata:
+            name: awx
+            namespace: awx
+          spec:
+            service_type: nodeport
+            nodeport_port: 30080
+            projects_persistence: true
+            projects_storage_class: local-path
+            projects_storage_size: 8Gi
+            postgres_storage_class: local-path
+            postgres_storage_size: 8Gi
+
+    - name: Wait for AWX instance to be ready
+      k8s_info:
+        api_version: awx.ansible.com/v1beta1
+        kind: AWX
+        name: awx
+        namespace: awx
+      register: awx_status
+      until: awx_status.resources[0].status.deployed is defined and awx_status.resources[0].status.deployed == true
+      retries: 60
+      delay: 30 
