@@ -188,7 +188,6 @@
             default.vcl: |
 {{ vcl_config.content | indent(14, True) }}
 
-    # End of Kubernetes resources
     - name: 清理旧的部署
       shell: |
         echo "=== 清理旧的部署 ==="
