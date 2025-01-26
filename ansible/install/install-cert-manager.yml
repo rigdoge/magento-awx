@@ -204,23 +204,26 @@
       delay: 10
 
     - name: 创建 ClusterIssuer
-      shell: |
-        cat << EOF | kubectl apply -f -
-        apiVersion: cert-manager.io/v1
-        kind: ClusterIssuer
-        metadata:
-          name: {{ cluster_issuer_name }}
-        spec:
-          acme:
-            server: {% if staging %}https://acme-staging-v02.api.letsencrypt.org/directory{% else %}https://acme-v02.api.letsencrypt.org/directory{% endif %}
-            email: {{ email_address }}
-            privateKeySecretRef:
-              name: {{ cluster_issuer_name }}
-            solvers:
-            - http01:
-                ingress:
-                  class: nginx
-        EOF
+      copy:
+        dest: /tmp/cluster-issuer.yaml
+        content: |
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: {{ cluster_issuer_name }}
+          spec:
+            acme:
+              server: {% if staging %}https://acme-staging-v02.api.letsencrypt.org/directory{% else %}https://acme-v02.api.letsencrypt.org/directory{% endif %}
+              email: {{ email_address }}
+              privateKeySecretRef:
+                name: {{ cluster_issuer_name }}
+              solvers:
+              - http01:
+                  ingress:
+                    class: nginx
+
+    - name: 应用 ClusterIssuer
+      shell: kubectl apply -f /tmp/cluster-issuer.yaml
 
     - name: 配置 AWX Ingress
       shell: |
