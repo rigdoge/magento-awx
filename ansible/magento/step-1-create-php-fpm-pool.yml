@@ -2,6 +2,8 @@
 - name: 创建 Magento 2 PHP-FPM Pool
   hosts: localhost
   gather_facts: false
+  collections:
+    - kubernetes.core
   vars:
     site_name: chen  # 站点名称，可以被外部变量覆盖
     php_fpm_namespace: magento-shared  # PHP-FPM 所在的命名空间
