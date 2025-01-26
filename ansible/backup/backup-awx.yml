@@ -22,16 +22,14 @@
     - name: 如果找不到 AWX CLI，尝试安装
       when: not awx_cli_stat.stat.exists
       block:
-        - name: 安装 Python3 pip 和依赖
-          shell: |
-            apt-get update
-            apt-get install -y python3-pip python3-dev libffi-dev
-          become: yes
-
         - name: 安装 AWX CLI
           shell: |
-            pip3 install --upgrade pip
-            pip3 install awxkit
+            python3 -m pip install --user awxkit
+          become: yes
+
+        - name: 创建 AWX CLI 链接
+          shell: |
+            ln -sf /root/.local/bin/awx {{ awx_cli }}
           become: yes
 
     - name: 创建备份目录
