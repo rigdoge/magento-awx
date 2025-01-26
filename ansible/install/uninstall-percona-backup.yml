@@ -1,0 +1,40 @@
+---
+- name: 卸载 Percona XtraBackup
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('magento') }}"
+    k3s_bin: "/usr/local/bin/k3s"
+    
+  tasks:
+    - name: 删除所有备份任务
+      shell: |
+        # 删除所有备份相关的 Job
+        echo "删除备份任务..."
+        {{ k3s_bin }} kubectl get jobs -n {{ use_namespace }} -o name | grep backup | xargs -r {{ k3s_bin }} kubectl delete -n {{ use_namespace }} || true
+        
+        # 删除 CronJob
+        echo "删除定时任务..."
+        {{ k3s_bin }} kubectl delete cronjob percona-full-backup -n {{ use_namespace }} || true
+        {{ k3s_bin }} kubectl delete cronjob percona-incremental-backup -n {{ use_namespace }} || true
+        
+        # 删除 ConfigMap
+        echo "删除配置..."
+        {{ k3s_bin }} kubectl delete configmap backup-scripts -n {{ use_namespace }} || true
+        
+        # 删除 Secret
+        echo "删除密钥..."
+        {{ k3s_bin }} kubectl delete secret percona -n {{ use_namespace }} || true
+        
+        # 删除 PVC（可选）
+        if [ "{{ delete_pvc | default('false') }}" = "true" ]; then
+          echo "删除存储卷..."
+          {{ k3s_bin }} kubectl delete pvc percona-backup -n {{ use_namespace }} || true
+        else
+          echo "保留存储卷 PVC..."
+        fi
+      register: uninstall_result
+      
+    - name: 显示卸载结果
+      debug:
+        var: uninstall_result.stdout_lines 

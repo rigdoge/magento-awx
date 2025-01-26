@@ -10,8 +10,30 @@
     inc_backup_schedule: "{{ inc_schedule | default('0 */4 * * *') }}"  # 默认每4小时
     backup_image: "percona/percona-xtrabackup:8.0"
     k3s_bin: "/usr/local/bin/k3s"
+    mysql_root_password: "{{ lookup('env', 'MYSQL_ROOT_PASSWORD') | default('magento123') }}"
     
   tasks:
+    - name: 创建临时 Secret 文件
+      copy:
+        dest: "/tmp/secret.yaml"
+        content: |
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: percona
+            namespace: {{ use_namespace }}
+          type: Opaque
+          data:
+            root-password: {{ mysql_root_password | b64encode }}
+
+    - name: 应用 Secret
+      command: "{{ k3s_bin }} kubectl apply -f /tmp/secret.yaml"
+      register: secret_result
+
+    - name: 显示 Secret 创建结果
+      debug:
+        var: secret_result.stdout_lines
+
     - name: 创建临时 PVC 文件
       copy:
         dest: "/tmp/pvc.yaml"
@@ -223,6 +245,7 @@
         path: "{{ item }}"
         state: absent
       with_items:
+        - /tmp/secret.yaml
         - /tmp/pvc.yaml
         - /tmp/configmap.yaml
         - /tmp/full-backup-cronjob.yaml
