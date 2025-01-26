@@ -1,0 +1,49 @@
+---
+- name: 备份 AWX
+  hosts: KS-1
+  gather_facts: yes
+  vars:
+    backup_dir: "/backup/awx"
+    timestamp: "{{ ansible_date_time.date }}"
+    namespace: "awx"
+  
+  tasks:
+    - name: 创建备份目录
+      file:
+        path: "{{ backup_dir }}/{{ timestamp }}"
+        state: directory
+        mode: '0755'
+      become: yes
+
+    - name: 获取所有资源
+      shell: |
+        k3s kubectl get all -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/resources.yaml
+        k3s kubectl get secret -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/secrets.yaml
+        k3s kubectl get configmap -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/configmaps.yaml
+        k3s kubectl get pvc -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/pvcs.yaml
+      register: resources_result
+      become: yes
+
+    - name: 备份数据库
+      shell: |
+        k3s kubectl exec -n {{ namespace }} deployment/awx-postgres -- pg_dumpall -U postgres > {{ backup_dir }}/{{ timestamp }}/db_dump.sql
+      register: db_result
+      become: yes
+
+    - name: 压缩备份文件
+      shell: |
+        cd {{ backup_dir }} && tar -czf awx-backup-{{ timestamp }}.tar.gz {{ timestamp }}
+      args:
+        warn: false
+      become: yes
+
+    - name: 清理临时文件
+      file:
+        path: "{{ backup_dir }}/{{ timestamp }}"
+        state: absent
+      become: yes
+
+    - name: 删除超过 7 天的备份
+      shell: |
+        find {{ backup_dir }} -name "awx-backup-*.tar.gz" -mtime +7 -delete
+      become: yes 
