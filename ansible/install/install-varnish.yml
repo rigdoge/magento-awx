@@ -108,6 +108,7 @@
               set resp.http.X-Cache-Hits = obj.hits;
               return (deliver);
           }
+      register: vcl_config
 
     - name: 创建 Varnish 配置
       copy:
@@ -185,7 +186,7 @@
             namespace: {{ use_namespace }}
           data:
             default.vcl: |
-              {{ lookup('file', '/tmp/default.vcl') | indent(14) }}
+{{ vcl_config.content | indent(14, True) }}
 
     - name: 清理旧的部署
       shell: |
