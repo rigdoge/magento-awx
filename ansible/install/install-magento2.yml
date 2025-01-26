@@ -1,224 +1,153 @@
 ---
-- name: 安装 Magento 2.4.7
-  hosts: all
-  gather_facts: no
-  vars:
-    namespace: chen
-    domain: magento.tschenfeng.com
-    magento_version: 2.4.7
-    db_host: percona
-    db_name: chenmage
-    db_user: chen
-    db_password: chen.2010
-    admin_user: doge
-    admin_password: doge.2010
-    composer_public_key: 4f44d6581ab1ff92b53b1e6cc8e4e9b5
-    composer_private_key: 8da547c46318a11a0f4a1785cb8171ba
-    redis_host: redis
-    rabbitmq_host: rabbitmq
-    rabbitmq_user: chen
-    rabbitmq_password: chen2010
-    opensearch_host: opensearch
-    varnish_host: varnish
-
+- name: 安装 Magento 2
+  hosts: localhost
+  gather_facts: false
   tasks:
-    - name: 创建 Magento 配置
+    - name: 创建 PHP-FPM Dockerfile
       copy:
-        dest: /tmp/magento.yaml
+        dest: /tmp/Dockerfile
         content: |
+          FROM php:8.3-fpm
+
+          # Install dependencies
+          RUN apt-get update && apt-get install -y \
+              libfreetype6-dev \
+              libicu-dev \
+              libjpeg62-turbo-dev \
+              libpng-dev \
+              libxslt1-dev \
+              libzip-dev \
+              unzip \
+              git \
+              && rm -rf /var/lib/apt/lists/*
+
+          # Configure and install PHP extensions
+          RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+              && docker-php-ext-install -j$(nproc) \
+              bcmath \
+              gd \
+              intl \
+              mysqli \
+              opcache \
+              pdo_mysql \
+              soap \
+              sockets \
+              xsl \
+              zip
+
+          # Install additional extensions
+          RUN pecl install redis \
+              && docker-php-ext-enable redis
+
+          # Install Composer
+          RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+          # Copy PHP configuration
+          COPY php.ini /usr/local/etc/php/conf.d/magento.ini
+
+          WORKDIR /var/www/html
+
+          CMD ["php-fpm"]
+
+    - name: 创建 PHP 配置文件
+      copy:
+        dest: /tmp/php.ini
+        content: |
+          ; Memory and Execution Time
+          memory_limit = 4G
+          max_execution_time = 1800
+
+          ; Performance Settings
+          zlib.output_compression = On
+          date.timezone = UTC
+
+          ; OpCache Settings
+          opcache.enable = 1
+          opcache.enable_cli = 1
+          opcache.memory_consumption = 512
+          opcache.max_accelerated_files = 60000
+          opcache.revalidate_freq = 0
+          opcache.validate_timestamps = 0
+
+          ; PHP Settings for Magento
+          always_populate_raw_post_data = -1
+          realpath_cache_size = 10M
+          realpath_cache_ttl = 7200
+          max_input_vars = 10000
+          post_max_size = 64M
+          upload_max_filesize = 64M
+
+          ; Session Configuration
+          session.save_handler = files
+          session.save_path = "/tmp"
+          session.gc_probability = 1
+
+    - name: 构建 PHP-FPM 镜像
+      shell: |
+        cd /tmp
+        docker build -t magento2-php-fpm:8.3 .
+
+    - name: 创建 PHP-FPM Deployment
+      kubernetes.core.k8s:
+        state: present
+        definition:
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: magento
-            namespace: {{ namespace }}
-            labels:
-              app: magento
+            name: php-fpm
+            namespace: chen
           spec:
             replicas: 1
             selector:
               matchLabels:
-                app: magento
+                app: php-fpm
             template:
               metadata:
                 labels:
-                  app: magento
+                  app: php-fpm
               spec:
-                initContainers:
-                - name: init-magento
-                  image: composer:2.6
-                  command:
-                  - sh
-                  - -c
-                  - |
-                    cd /var/www/html
-                    composer config -g http-basic.repo.magento.com ${COMPOSER_PUBLIC_KEY} ${COMPOSER_PRIVATE_KEY}
-                    composer create-project --repository-url=https://repo.magento.com/ magento/project-community-edition={{ magento_version }} .
-                    composer require magento/module-jwt-framework-adapter:*
-                    find var generated vendor pub/static pub/media app/etc -type f -exec chmod g+w {} +
-                    find var generated vendor pub/static pub/media app/etc -type d -exec chmod g+ws {} +
-                    chown -R www-data:www-data .
-                  env:
-                  - name: COMPOSER_PUBLIC_KEY
-                    value: "{{ composer_public_key }}"
-                  - name: COMPOSER_PRIVATE_KEY
-                    value: "{{ composer_private_key }}"
-                  volumeMounts:
-                  - name: magento-data
-                    mountPath: /var/www/html
                 containers:
-                - name: magento
-                  image: php:8.3-fpm
+                - name: php-fpm
+                  image: magento2-php-fpm:8.3
+                  resources:
+                    requests:
+                      memory: "4Gi"
+                      cpu: "1"
+                    limits:
+                      memory: "6Gi"
+                      cpu: "2"
                   ports:
                   - containerPort: 9000
-                  env:
-                  - name: MAGENTO_DB_HOST
-                    value: "{{ db_host }}"
-                  - name: MAGENTO_DB_NAME
-                    value: "{{ db_name }}"
-                  - name: MAGENTO_DB_USER
-                    value: "{{ db_user }}"
-                  - name: MAGENTO_DB_PASSWORD
-                    value: "{{ db_password }}"
-                  - name: MAGENTO_ADMIN_USER
-                    value: "{{ admin_user }}"
-                  - name: MAGENTO_ADMIN_PASSWORD
-                    value: "{{ admin_password }}"
-                  - name: MAGENTO_BASE_URL
-                    value: "https://{{ domain }}"
-                  - name: MAGENTO_REDIS_HOST
-                    value: "{{ redis_host }}"
-                  - name: MAGENTO_RABBITMQ_HOST
-                    value: "{{ rabbitmq_host }}"
-                  - name: MAGENTO_RABBITMQ_USER
-                    value: "{{ rabbitmq_user }}"
-                  - name: MAGENTO_RABBITMQ_PASSWORD
-                    value: "{{ rabbitmq_password }}"
-                  - name: MAGENTO_OPENSEARCH_HOST
-                    value: "{{ opensearch_host }}"
-                  - name: MAGENTO_VARNISH_HOST
-                    value: "{{ varnish_host }}"
-                  volumeMounts:
-                  - name: magento-data
-                    mountPath: /var/www/html
-                volumes:
-                - name: magento-data
-                  persistentVolumeClaim:
-                    claimName: magento-data
-          ---
-          apiVersion: v1
-          kind: PersistentVolumeClaim
-          metadata:
-            name: magento-data
-            namespace: {{ namespace }}
-          spec:
-            accessModes:
-              - ReadWriteOnce
-            resources:
-              requests:
-                storage: 10Gi
-          ---
+
+    - name: 创建 PHP-FPM Service
+      kubernetes.core.k8s:
+        state: present
+        definition:
           apiVersion: v1
           kind: Service
           metadata:
-            name: magento
-            namespace: {{ namespace }}
+            name: php-fpm
+            namespace: chen
           spec:
+            selector:
+              app: php-fpm
             ports:
             - port: 9000
               targetPort: 9000
-            selector:
-              app: magento
 
-    - name: 创建 Magento Ingress
-      copy:
-        dest: /tmp/magento-ingress.yaml
-        content: |
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: magento
-            namespace: {{ namespace }}
-            annotations:
-              kubernetes.io/ingress.class: nginx
-              cert-manager.io/cluster-issuer: letsencrypt-prod
-          spec:
-            tls:
-            - hosts:
-              - {{ domain }}
-              secretName: magento-tls
-            rules:
-            - host: {{ domain }}
-              http:
-                paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: magento
-                      port:
-                        number: 9000
+    - name: 等待 PHP-FPM Pod 就绪
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: chen
+        label_selectors:
+          - app=php-fpm
+        field_selectors:
+          - status.phase=Running
+      register: php_fpm_pod
+      until: php_fpm_pod.resources | length > 0
+      retries: 30
+      delay: 10
 
-    - name: 部署 Magento
-      shell: |
-        kubectl apply -f /tmp/magento.yaml
-        kubectl apply -f /tmp/magento-ingress.yaml
-      register: deploy_result
-
-    - name: 等待 Magento Pod 就绪
-      shell: |
-        echo "等待 Magento Pod 就绪..."
-        kubectl wait --for=condition=ready pod -l app=magento -n {{ namespace }} --timeout=300s
-      register: wait_result
-
-    - name: 初始化 Magento
-      shell: |
-        POD_NAME=$(kubectl get pod -n {{ namespace }} -l app=magento -o jsonpath='{.items[0].metadata.name}')
-        kubectl exec -n {{ namespace }} $POD_NAME -- php bin/magento setup:install \
-          --base-url=https://{{ domain }} \
-          --db-host={{ db_host }} \
-          --db-name={{ db_name }} \
-          --db-user={{ db_user }} \
-          --db-password={{ db_password }} \
-          --admin-firstname=Admin \
-          --admin-lastname=User \
-          --admin-email=admin@example.com \
-          --admin-user={{ admin_user }} \
-          --admin-password={{ admin_password }} \
-          --language=en_US \
-          --currency=USD \
-          --timezone=Asia/Shanghai \
-          --use-rewrites=1 \
-          --search-engine=opensearch \
-          --opensearch-host={{ opensearch_host }} \
-          --opensearch-port=9200 \
-          --cache-backend=redis \
-          --cache-backend-redis-server={{ redis_host }} \
-          --cache-backend-redis-db=0 \
-          --page-cache=redis \
-          --page-cache-redis-server={{ redis_host }} \
-          --page-cache-redis-db=1 \
-          --session-save=redis \
-          --session-save-redis-host={{ redis_host }} \
-          --session-save-redis-db=2 \
-          --amqp-host={{ rabbitmq_host }} \
-          --amqp-port=5672 \
-          --amqp-user={{ rabbitmq_user }} \
-          --amqp-password={{ rabbitmq_password }}
-      register: install_result
-
-    - name: 配置生产模式
-      shell: |
-        POD_NAME=$(kubectl get pod -n {{ namespace }} -l app=magento -o jsonpath='{.items[0].metadata.name}')
-        kubectl exec -n {{ namespace }} $POD_NAME -- php bin/magento deploy:mode:set production
-        kubectl exec -n {{ namespace }} $POD_NAME -- php bin/magento setup:di:compile
-        kubectl exec -n {{ namespace }} $POD_NAME -- php bin/magento setup:static-content:deploy -f
-        kubectl exec -n {{ namespace }} $POD_NAME -- php bin/magento cache:flush
-      register: config_result
-
-    - name: 显示安装结果
+    - name: 显示 PHP-FPM Pod 状态
       debug:
-        msg: 
-          - "部署结果: {{ deploy_result.stdout_lines | default([]) }}"
-          - "等待结果: {{ wait_result.stdout_lines | default([]) }}"
-          - "安装结果: {{ install_result.stdout_lines | default([]) }}"
-          - "配置结果: {{ config_result.stdout_lines | default([]) }}" 
+        var: php_fpm_pod 
