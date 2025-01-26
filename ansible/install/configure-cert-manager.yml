@@ -5,8 +5,8 @@
   vars:
     domain_name: awx.tschenfeng.com
     email_address: ssl@tschenfeng.com
-    cluster_issuer_name: letsencrypt-prod
-    staging: false   # 使用 Let's Encrypt 生产环境
+    cluster_issuer_name: letsencrypt-staging
+    staging: true   # 使用 Let's Encrypt 测试环境
     cert_manager_namespace: cert-manager
 
   tasks:
@@ -202,3 +202,13 @@
           ClusterIssuer: {{ cluster_issuer_name }}
           证书名称: awx-tls
           命名空间: awx 
+
+    - name: 清理现有资源
+      shell: |
+        echo "清理现有证书资源..."
+        kubectl delete certificate -n awx awx-tls --ignore-not-found
+        kubectl delete secret -n awx awx-tls --ignore-not-found
+        kubectl delete clusterissuer letsencrypt-staging --ignore-not-found
+        kubectl delete clusterissuer letsencrypt-prod --ignore-not-found
+        echo "清理完成"
+      ignore_errors: yes 
