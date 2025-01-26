@@ -38,6 +38,31 @@
         ./get_helm.sh
         rm -f get_helm.sh
 
+    - name: 创建 ingress-nginx 命名空间
+      shell: |
+        kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: 添加 ingress-nginx Helm 仓库
+      shell: |
+        helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+        helm repo update
+
+    - name: 安装 Nginx Ingress Controller
+      shell: |
+        helm install ingress-nginx ingress-nginx/ingress-nginx \
+          --namespace ingress-nginx \
+          --set controller.service.type=NodePort \
+          --set controller.service.nodePorts.http=30080 \
+          --set controller.service.nodePorts.https=30443
+
+    - name: 等待 Nginx Ingress Controller 就绪
+      shell: |
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=controller --namespace ingress-nginx --timeout=300s
+      register: wait_result
+      until: wait_result.rc == 0
+      retries: 30
+      delay: 10
+
     - name: 创建 cert-manager 命名空间
       shell: |
         kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
