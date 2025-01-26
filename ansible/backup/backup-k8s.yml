@@ -1,10 +1,10 @@
 ---
 - name: 备份 AWX
-  hosts: KS-1
+  hosts: localhost
   gather_facts: yes
   vars:
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d') }}"
     backup_dir: "/backup/awx"
-    timestamp: "{{ ansible_date_time.date }}"
     namespace: "awx"
   
   tasks:
@@ -15,18 +15,19 @@
         mode: '0755'
       become: yes
 
-    - name: 获取所有资源
+    - name: 备份 AWX 资源
       shell: |
-        k3s kubectl get all -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/resources.yaml
-        k3s kubectl get secret -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/secrets.yaml
-        k3s kubectl get configmap -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/configmaps.yaml
-        k3s kubectl get pvc -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/pvcs.yaml
+        kubectl get awx awx-demo -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/awx-cr.yaml
+        kubectl get all -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/resources.yaml
+        kubectl get secret -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/secrets.yaml
+        kubectl get configmap -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/configmaps.yaml
+        kubectl get pvc -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/pvcs.yaml
       register: resources_result
       become: yes
 
     - name: 显示所有 Pod 标签
       shell: |
-        k3s kubectl get pods -n {{ namespace }} --show-labels
+        kubectl get pods -n {{ namespace }} --show-labels
       register: pod_labels
       become: yes
 
@@ -36,7 +37,7 @@
 
     - name: 获取 PostgreSQL Pod 名称
       shell: |
-        k3s kubectl get pod -n {{ namespace }} -l app=postgres -o jsonpath='{.items[0].metadata.name}'
+        kubectl get pod -n {{ namespace }} -l app.kubernetes.io/name=postgres-13 -o jsonpath='{.items[0].metadata.name}'
       register: pg_pod
       become: yes
 
@@ -47,15 +48,14 @@
 
     - name: 备份数据库
       shell: |
-        k3s kubectl exec -n {{ namespace }} {{ pg_pod.stdout }} -- pg_dumpall -U postgres > {{ backup_dir }}/{{ timestamp }}/db_dump.sql
+        kubectl exec -n {{ namespace }} {{ pg_pod.stdout }} -- pg_dumpall -U awx > {{ backup_dir }}/{{ timestamp }}/db_dump.sql
       register: db_result
       become: yes
 
     - name: 压缩备份文件
       shell: |
         cd {{ backup_dir }} && tar -czf awx-backup-{{ timestamp }}.tar.gz {{ timestamp }}
-      args:
-        warn: false
+      register: tar_result
       become: yes
 
     - name: 清理临时文件
@@ -64,7 +64,7 @@
         state: absent
       become: yes
 
-    - name: 删除超过 7 天的备份
+    - name: 清理旧备份
       shell: |
         find {{ backup_dir }} -name "awx-backup-*.tar.gz" -mtime +7 -delete
       become: yes 
