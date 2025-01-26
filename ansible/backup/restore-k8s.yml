@@ -37,10 +37,20 @@
         cd {{ temp_dir }} && tar xzf {{ backup_dir }}/{{ restore_file }}.tar.gz
       become: yes
 
+    - name: 获取 deployment 名称
+      shell: |
+        WEB_DEPLOYMENT=$(grep "kind: Deployment" -A 1 {{ temp_dir }}/{{ restore_file }}/resources.yaml | grep "name:" | head -n 1 | awk '{print $2}')
+        TASK_DEPLOYMENT=$(grep "kind: Deployment" -A 1 {{ temp_dir }}/{{ restore_file }}/resources.yaml | grep "name:" | tail -n 1 | awk '{print $2}')
+        echo "$WEB_DEPLOYMENT $TASK_DEPLOYMENT"
+      register: deployment_names
+      become: yes
+
     - name: 停止 AWX 服务
       shell: |
-        k3s kubectl scale deployment -n {{ use_namespace }} awx-web --replicas=0
-        k3s kubectl scale deployment -n {{ use_namespace }} awx-task --replicas=0
+        WEB_DEPLOYMENT=$(echo "{{ deployment_names.stdout }}" | cut -d' ' -f1)
+        TASK_DEPLOYMENT=$(echo "{{ deployment_names.stdout }}" | cut -d' ' -f2)
+        k3s kubectl scale deployment -n {{ use_namespace }} $WEB_DEPLOYMENT --replicas=0
+        k3s kubectl scale deployment -n {{ use_namespace }} $TASK_DEPLOYMENT --replicas=0
       become: yes
 
     - name: 等待 AWX Pod 停止
@@ -86,8 +96,10 @@
 
     - name: 启动 AWX 服务
       shell: |
-        k3s kubectl scale deployment -n {{ use_namespace }} awx-web --replicas=1
-        k3s kubectl scale deployment -n {{ use_namespace }} awx-task --replicas=1
+        WEB_DEPLOYMENT=$(echo "{{ deployment_names.stdout }}" | cut -d' ' -f1)
+        TASK_DEPLOYMENT=$(echo "{{ deployment_names.stdout }}" | cut -d' ' -f2)
+        k3s kubectl scale deployment -n {{ use_namespace }} $WEB_DEPLOYMENT --replicas=1
+        k3s kubectl scale deployment -n {{ use_namespace }} $TASK_DEPLOYMENT --replicas=1
       become: yes
 
     - name: 等待 AWX Pod 就绪
