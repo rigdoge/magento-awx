@@ -26,9 +26,14 @@
 
     - name: 获取 PostgreSQL Pod 名称
       shell: |
-        k3s kubectl get pod -n {{ namespace }} -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].metadata.name}'
+        k3s kubectl get pod -n {{ namespace }} -l app=postgres -o jsonpath='{.items[0].metadata.name}'
       register: pg_pod
       become: yes
+
+    - name: 显示 Pod 名称
+      debug:
+        var: pg_pod.stdout
+      when: pg_pod.stdout is defined
 
     - name: 备份数据库
       shell: |
