@@ -175,15 +175,34 @@
       debug:
         var: pvc_status.stdout_lines
 
+    - name: 等待 PVC 创建
+      shell: |
+        echo "=== 等待 PVC 创建 ==="
+        for i in $(seq 1 30); do
+          PVC_STATUS=$(/usr/local/bin/k3s kubectl get pvc redis-data-redis-0 -n {{ use_namespace }} -o jsonpath='{.status.phase}')
+          if [ "$PVC_STATUS" = "Bound" ]; then
+            echo "PVC 已就绪"
+            exit 0
+          fi
+          echo "等待 PVC 创建... 第 $i 次尝试"
+          /usr/local/bin/k3s kubectl get pvc -n {{ use_namespace }}
+          sleep 5
+        done
+        echo "错误: PVC 未能创建成功"
+        exit 1
+      register: pvc_wait
+
     - name: 等待 Pod 创建
       shell: |
         echo "=== 等待 Pod 创建 ==="
         for i in $(seq 1 30); do
-          POD_NAME=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].metadata.name}')
+          POD_NAME=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
           if [ ! -z "$POD_NAME" ]; then
             echo "$POD_NAME"
             exit 0
           fi
+          echo "等待 Pod 创建... 第 $i 次尝试"
+          /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis
           sleep 5
         done
         echo ""
@@ -196,7 +215,7 @@
 
     - name: 检查 Pod 状态
       shell: |
-        POD_NAME="{{ pod_name.stdout }}"
+        POD_NAME=$(echo "{{ pod_name.stdout }}" | tail -n1)
         echo "=== 检查 Pod 状态: $POD_NAME ==="
         /usr/local/bin/k3s kubectl get pod $POD_NAME -n {{ use_namespace }} -o wide
         /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} $POD_NAME
