@@ -6,8 +6,32 @@
     backup_dir: "/backup/awx"
     timestamp: "{{ ansible_date_time.date }}"
     awx_cli: "awx"
+    awx_host: "http://localhost"
+    awx_username: "admin"
+    awx_password: "{{ lookup('env', 'AWX_PASSWORD') }}"
   
   tasks:
+    - name: 安装 Python3 pip
+      apt:
+        name: python3-pip
+        state: present
+      become: yes
+
+    - name: 安装 AWX CLI
+      pip:
+        name: awxkit
+        state: present
+      become: yes
+
+    - name: 配置 AWX CLI
+      shell: |
+        echo "host: {{ awx_host }}" > ~/.awx/config
+        echo "username: {{ awx_username }}" >> ~/.awx/config
+        echo "password: {{ awx_password }}" >> ~/.awx/config
+        chmod 600 ~/.awx/config
+      args:
+        creates: ~/.awx/config
+
     - name: 创建备份目录
       file:
         path: "{{ backup_dir }}/{{ timestamp }}"
