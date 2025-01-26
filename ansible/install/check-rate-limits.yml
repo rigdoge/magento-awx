@@ -11,9 +11,15 @@
         kubectl logs -n cert-manager -l app=cert-manager --tail=500 | grep -i "rate limit\|too many\|exceeded\|limit reached"
         
         echo "2. 检查失败的证书请求历史..."
+        echo "详细信息："
+        kubectl get certificaterequest -n awx awx-tls-1 -o yaml
+        echo "简要信息："
         kubectl get certificaterequest -n awx --sort-by=.metadata.creationTimestamp
         
         echo "3. 检查 ACME Orders 历史..."
+        echo "详细信息："
+        kubectl get orders.acme.cert-manager.io -n awx awx-tls-1-1435734878 -o yaml
+        echo "简要信息："
         kubectl get orders.acme.cert-manager.io -n awx --sort-by=.metadata.creationTimestamp
         
         echo "4. 检查详细的失败原因..."
@@ -21,6 +27,9 @@
         
         echo "5. 检查 Events 中的错误信息..."
         kubectl get events -n awx --sort-by=.lastTimestamp | grep -i "certificate\|acme\|challenge\|error\|fail"
+        
+        echo "6. 检查证书状态..."
+        kubectl get certificate -n awx awx-tls -o yaml
       register: rate_limit_check
       ignore_errors: yes
 
