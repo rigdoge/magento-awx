@@ -30,15 +30,17 @@
               port 6379
               bind 0.0.0.0
               protected-mode no
+              daemonize no
               
               # 内存配置
               maxmemory {{ use_memory }}
               maxmemory-policy allkeys-lru
               
               # 持久化配置
-              save 900 1
-              save 300 10
-              save 60 10000
+              dir /data
+              appendonly yes
+              appendfilename "appendonly.aof"
+              appendfsync everysec
               
               # 数据库配置
               databases 16
@@ -49,6 +51,7 @@
               
               # 日志配置
               loglevel notice
+              logfile ""  # 输出到标准输出
               
               # 安全配置
               rename-command FLUSHALL ""
@@ -153,14 +156,32 @@
         for i in $(seq 1 30); do
           echo "检查 Pod 状态... 第 $i 次尝试"
           /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o wide
+          
+          # 获取 Pod 名称
+          POD_NAME=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].metadata.name}')
+          
+          if [ ! -z "$POD_NAME" ]; then
+            echo "检查 Pod 日志..."
+            /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} $POD_NAME
+            
+            echo "检查 Pod 上一次实例的日志..."
+            /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} $POD_NAME --previous
+          fi
+          
           if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis | grep -q Running; then
             echo "Pod 已经运行"
             exit 0
           fi
+          
           echo "检查 Pod 详细信息..."
           /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} -l app=redis
+          
           echo "检查 PVC 状态..."
           /usr/local/bin/k3s kubectl get pvc -n {{ use_namespace }}
+          
+          echo "检查 ConfigMap..."
+          /usr/local/bin/k3s kubectl get configmap redis-config -n {{ use_namespace }} -o yaml
+          
           echo "等待 10 秒后重试..."
           sleep 10
         done
