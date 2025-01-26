@@ -183,8 +183,16 @@
                       - name: xtrabackup
                         image: {{ backup_image }}
                         command: ["/bin/bash", "/scripts/backup.sh"]
+                        securityContext:
+                          runAsUser: 999
+                          runAsGroup: 999
                         env:
                           - name: MYSQL_ROOT_PASSWORD
+                            valueFrom:
+                              secretKeyRef:
+                                name: percona
+                                key: root-password
+                          - name: MYSQL_PWD
                             valueFrom:
                               secretKeyRef:
                                 name: percona
@@ -236,8 +244,16 @@
                       - name: xtrabackup
                         image: {{ backup_image }}
                         command: ["/bin/bash", "/scripts/incremental-backup.sh"]
+                        securityContext:
+                          runAsUser: 999
+                          runAsGroup: 999
                         env:
                           - name: MYSQL_ROOT_PASSWORD
+                            valueFrom:
+                              secretKeyRef:
+                                name: percona
+                                key: root-password
+                          - name: MYSQL_PWD
                             valueFrom:
                               secretKeyRef:
                                 name: percona
