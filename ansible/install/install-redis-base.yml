@@ -81,15 +81,13 @@
                   app: redis
               spec:
                 securityContext:
-                  fsGroup: 1000
+                  runAsUser: 999
+                  runAsGroup: 999
+                  fsGroup: 999
                 containers:
                 - name: redis
                   image: redis:7.2
-                  command: ["sh", "-c"]
-                  args: 
-                    - |
-                      chown -R 1000:1000 /data
-                      redis-server /usr/local/etc/redis/redis.conf
+                  args: ["redis-server", "/usr/local/etc/redis/redis.conf"]
                   ports:
                   - containerPort: 6379
                   resources:
