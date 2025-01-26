@@ -102,7 +102,20 @@
         kubectl get ingress -n awx -o wide
         
         echo "检查证书申请状态..."
-        kubectl get certificate,certificaterequest,order,challenge -n awx
+        echo "证书详细信息："
+        kubectl get certificate -n awx -o yaml
+        
+        echo "证书请求详细信息："
+        kubectl get certificaterequest -n awx -o yaml
+        
+        echo "ACME Order 详细信息："
+        kubectl get order -n awx -o yaml
+        
+        echo "ACME Challenge 详细信息："
+        kubectl get challenge -n awx -o yaml
+        
+        echo "Events 信息："
+        kubectl get events -n awx --sort-by='.lastTimestamp'
       register: initial_status
       ignore_errors: yes
 
