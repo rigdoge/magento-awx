@@ -6,7 +6,7 @@
     domain_name: awx.tschenfeng.com
     email_address: ssl@tschenfeng.com
     cluster_issuer_name: letsencrypt-prod
-    staging: false  # 设置为 true 使用 Let's Encrypt 的测试环境
+    staging: true   # 使用 Let's Encrypt 测试环境，避免触发生产环境速率限制
 
   tasks:
     - name: 检查和配置 K3s kubeconfig
