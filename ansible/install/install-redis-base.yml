@@ -31,6 +31,7 @@
               bind 0.0.0.0
               protected-mode no
               daemonize no
+              supervised no
               
               # 内存配置
               maxmemory {{ use_memory }}
@@ -51,7 +52,7 @@
               
               # 日志配置
               loglevel notice
-              logfile ""  # 输出到标准输出
+              logfile ""
               
               # 安全配置
               rename-command FLUSHALL ""
@@ -79,10 +80,16 @@
                 labels:
                   app: redis
               spec:
+                securityContext:
+                  fsGroup: 1000
                 containers:
                 - name: redis
                   image: redis:7.2
-                  args: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+                  command: ["sh", "-c"]
+                  args: 
+                    - |
+                      chown -R 1000:1000 /data
+                      redis-server /usr/local/etc/redis/redis.conf
                   ports:
                   - containerPort: 6379
                   resources:
@@ -103,15 +110,18 @@
                       port: 6379
                     initialDelaySeconds: 30
                     periodSeconds: 10
+                    timeoutSeconds: 5
                   readinessProbe:
                     tcpSocket:
                       port: 6379
                     initialDelaySeconds: 5
                     periodSeconds: 10
+                    timeoutSeconds: 5
                 volumes:
                 - name: redis-config
                   configMap:
                     name: redis-config
+                    defaultMode: 0644
                 - name: redis-data
                   persistentVolumeClaim:
                     claimName: redis-data
@@ -155,36 +165,36 @@
         echo "=== 等待 Pod 创建完成 ==="
         for i in $(seq 1 30); do
           echo "检查 Pod 状态... 第 $i 次尝试"
-          /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o wide
           
-          # 获取 Pod 名称
+          # 获取 Pod 状态
+          POD_STATUS=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].status.phase}')
           POD_NAME=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].metadata.name}')
           
-          if [ ! -z "$POD_NAME" ]; then
+          if [ "$POD_STATUS" = "Running" ]; then
+            # 检查容器是否就绪
+            READY=$(/usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+            if [ "$READY" = "true" ]; then
+              echo "Pod 已经就绪并正在运行"
+              exit 0
+            fi
+          fi
+          
+          # 如果 Pod 不是 Running 状态，检查详细信息
+          if [ "$POD_STATUS" != "Running" ]; then
+            echo "Pod 状态: $POD_STATUS"
+            echo "检查 Pod 详细信息..."
+            /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} $POD_NAME
+            
             echo "检查 Pod 日志..."
             /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} $POD_NAME
-            
-            echo "检查 Pod 上一次实例的日志..."
-            /usr/local/bin/k3s kubectl logs -n {{ use_namespace }} $POD_NAME --previous
           fi
-          
-          if /usr/local/bin/k3s kubectl get pods -n {{ use_namespace }} -l app=redis | grep -q Running; then
-            echo "Pod 已经运行"
-            exit 0
-          fi
-          
-          echo "检查 Pod 详细信息..."
-          /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} -l app=redis
-          
-          echo "检查 PVC 状态..."
-          /usr/local/bin/k3s kubectl get pvc -n {{ use_namespace }}
-          
-          echo "检查 ConfigMap..."
-          /usr/local/bin/k3s kubectl get configmap redis-config -n {{ use_namespace }} -o yaml
           
           echo "等待 10 秒后重试..."
           sleep 10
         done
+        
         echo "错误: Pod 未能在指定时间内启动"
+        echo "最终状态:"
+        /usr/local/bin/k3s kubectl describe pod -n {{ use_namespace }} -l app=redis
         exit 1
       register: wait_result 
