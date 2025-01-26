@@ -1,0 +1,186 @@
+---
+- name: 安装 Percona XtraBackup
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('magento') }}"
+    backup_size: "{{ size | default('50Gi') }}"
+    retention_days: "{{ retention | default('7') }}"
+    full_backup_schedule: "{{ full_schedule | default('0 0 * * *') }}"  # 默认每天凌晨
+    inc_backup_schedule: "{{ inc_schedule | default('0 */4 * * *') }}"  # 默认每4小时
+    backup_image: "percona/percona-xtrabackup:8.0"
+    
+  tasks:
+    - name: 创建备份 PVC
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: percona-backup
+            namespace: "{{ use_namespace }}"
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: "{{ backup_size }}"
+
+    - name: 创建备份配置 ConfigMap
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: backup-scripts
+            namespace: "{{ use_namespace }}"
+          data:
+            backup.sh: |
+              #!/bin/bash
+              set -e
+              
+              # 环境变量
+              BACKUP_DIR="/backup"
+              MYSQL_HOST="percona"
+              MYSQL_PORT="3306"
+              DATE=$(date +%Y%m%d)
+              FULL_BACKUP_DIR="$BACKUP_DIR/full/$DATE"
+              INC_BACKUP_DIR="$BACKUP_DIR/inc/$DATE"
+              
+              # 创建备份目录
+              mkdir -p "$FULL_BACKUP_DIR"
+              mkdir -p "$INC_BACKUP_DIR"
+              
+              # 执行完整备份
+              echo "开始完整备份..."
+              xtrabackup --backup \
+                --host=$MYSQL_HOST \
+                --port=$MYSQL_PORT \
+                --user=root \
+                --password=$MYSQL_ROOT_PASSWORD \
+                --target-dir=$FULL_BACKUP_DIR
+              
+              echo "准备完整备份..."
+              xtrabackup --prepare --target-dir=$FULL_BACKUP_DIR
+              
+              echo "验证备份..."
+              xtrabackup --check --target-dir=$FULL_BACKUP_DIR
+              
+              # 清理旧备份
+              echo "清理旧备份..."
+              find $BACKUP_DIR -type d -mtime +{{ retention_days }} -exec rm -rf {} \;
+              
+              echo "备份完成"
+              
+            incremental-backup.sh: |
+              #!/bin/bash
+              set -e
+              
+              # 环境变量
+              BACKUP_DIR="/backup"
+              MYSQL_HOST="percona"
+              MYSQL_PORT="3306"
+              DATE=$(date +%Y%m%d)
+              TIME=$(date +%H%M)
+              LATEST_FULL=$(ls -t $BACKUP_DIR/full | head -1)
+              INC_BACKUP_DIR="$BACKUP_DIR/inc/$DATE/$TIME"
+              
+              # 创建增量备份目录
+              mkdir -p "$INC_BACKUP_DIR"
+              
+              # 执行增量备份
+              echo "开始增量备份..."
+              xtrabackup --backup \
+                --host=$MYSQL_HOST \
+                --port=$MYSQL_PORT \
+                --user=root \
+                --password=$MYSQL_ROOT_PASSWORD \
+                --target-dir=$INC_BACKUP_DIR \
+                --incremental-basedir=$BACKUP_DIR/full/$LATEST_FULL
+              
+              echo "增量备份完成"
+
+    - name: 创建完整备份 CronJob
+      k8s:
+        state: present
+        definition:
+          apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: percona-full-backup
+            namespace: "{{ use_namespace }}"
+          spec:
+            schedule: "{{ full_backup_schedule }}"
+            successfulJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: xtrabackup
+                        image: "{{ backup_image }}"
+                        command: ["/bin/bash", "/scripts/backup.sh"]
+                        env:
+                          - name: MYSQL_ROOT_PASSWORD
+                            valueFrom:
+                              secretKeyRef:
+                                name: percona
+                                key: root-password
+                        volumeMounts:
+                          - name: backup-volume
+                            mountPath: /backup
+                          - name: backup-scripts
+                            mountPath: /scripts
+                    volumes:
+                      - name: backup-volume
+                        persistentVolumeClaim:
+                          claimName: percona-backup
+                      - name: backup-scripts
+                        configMap:
+                          name: backup-scripts
+                          defaultMode: 0755
+                    restartPolicy: OnFailure
+
+    - name: 创建增量备份 CronJob
+      k8s:
+        state: present
+        definition:
+          apiVersion: batch/v1
+          kind: CronJob
+          metadata:
+            name: percona-incremental-backup
+            namespace: "{{ use_namespace }}"
+          spec:
+            schedule: "{{ inc_backup_schedule }}"
+            successfulJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 3
+            jobTemplate:
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: xtrabackup
+                        image: "{{ backup_image }}"
+                        command: ["/bin/bash", "/scripts/incremental-backup.sh"]
+                        env:
+                          - name: MYSQL_ROOT_PASSWORD
+                            valueFrom:
+                              secretKeyRef:
+                                name: percona
+                                key: root-password
+                        volumeMounts:
+                          - name: backup-volume
+                            mountPath: /backup
+                          - name: backup-scripts
+                            mountPath: /scripts
+                    volumes:
+                      - name: backup-volume
+                        persistentVolumeClaim:
+                          claimName: percona-backup
+                      - name: backup-scripts
+                        configMap:
+                          name: backup-scripts
+                          defaultMode: 0755
+                    restartPolicy: OnFailure 
