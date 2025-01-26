@@ -30,8 +30,8 @@
 
     - name: 创建 Cloudflare API Token Secret
       shell: |
-        # 创建包含 API Token 的文件
-        echo "{{ cloudflare_api_token }}" > /tmp/cloudflare-api-token
+        # 创建包含 API Token 的文件，确保没有换行符
+        echo -n "{{ cloudflare_api_token }}" > /tmp/cloudflare-api-token
         
         # 创建 Secret
         kubectl create secret generic cloudflare-api-token \
