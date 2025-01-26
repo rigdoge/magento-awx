@@ -14,15 +14,15 @@
         msg: "请通过 -e backup_timestamp=YYYYMMDD_HHMMSS 指定要还原的备份时间戳，例如: -e backup_timestamp=20240326_143022"
       when: restore_file == ''
 
-    - name: 检查备份目录是否存在
+    - name: 检查备份文件是否存在
       stat:
-        path: "{{ backup_dir }}/{{ restore_file }}"
+        path: "{{ backup_dir }}/awx-backup-{{ restore_file }}.tar.gz"
       register: backup_stat
       become: yes
 
-    - name: 验证备份目录存在
+    - name: 验证备份文件存在
       fail:
-        msg: "备份目录 {{ backup_dir }}/{{ restore_file }} 不存在"
+        msg: "备份文件 {{ backup_dir }}/awx-backup-{{ restore_file }}.tar.gz 不存在"
       when: not backup_stat.stat.exists
 
     - name: 创建临时目录
@@ -30,6 +30,13 @@
         path: "{{ temp_dir }}"
         state: directory
         mode: '0755'
+      become: yes
+
+    - name: 解压备份文件
+      unarchive:
+        src: "{{ backup_dir }}/awx-backup-{{ restore_file }}.tar.gz"
+        dest: "{{ temp_dir }}"
+        remote_src: yes
       become: yes
 
     - name: 停止 AWX 服务
@@ -49,19 +56,19 @@
       shell: |
         # 按顺序还原资源
         echo "还原 AWX CR..."
-        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/awx-cr.yaml
+        k3s kubectl apply -f {{ temp_dir }}/{{ restore_file }}/awx-cr.yaml
         
         echo "还原 Secrets..."
-        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/secrets.yaml
+        k3s kubectl apply -f {{ temp_dir }}/{{ restore_file }}/secrets.yaml
         
         echo "还原 ConfigMaps..."
-        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/configmaps.yaml
+        k3s kubectl apply -f {{ temp_dir }}/{{ restore_file }}/configmaps.yaml
         
         echo "还原 PVCs..."
-        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/pvcs.yaml
+        k3s kubectl apply -f {{ temp_dir }}/{{ restore_file }}/pvcs.yaml
         
         echo "还原其他资源..."
-        k3s kubectl apply -f {{ backup_dir }}/{{ restore_file }}/resources.yaml
+        k3s kubectl apply -f {{ temp_dir }}/{{ restore_file }}/resources.yaml
       register: restore_result
       become: yes
 
