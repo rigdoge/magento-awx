@@ -34,8 +34,8 @@
               daemonize no
               supervised no
               
-              # 内存配置
-              maxmemory {{ use_memory }}
+              # 内存配置 (1Gi = 1073741824 bytes)
+              maxmemory {{ use_memory | regex_replace('Gi$', '') | int * 1024 * 1024 * 1024 }}
               maxmemory-policy allkeys-lru
               
               # 持久化配置
