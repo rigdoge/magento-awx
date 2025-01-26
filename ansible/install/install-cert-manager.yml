@@ -68,13 +68,58 @@
       register: prometheus_check
       changed_when: false
 
+    - name: 检查端口占用情况
+      shell: |
+        echo "=== 检查端口占用 ==="
+        
+        # 检查 HTTP 端口 (30080)
+        if kubectl get svc --all-namespaces -o json | grep -q '"nodePort": 30080'; then
+          HTTP_PORT=$(kubectl get svc --all-namespaces -o json | jq '.items[].spec.ports[] | select(.nodePort) | .nodePort' | sort -n | grep -A1 30080 | tail -n1)
+          if [ -z "$HTTP_PORT" ]; then
+            HTTP_PORT=30081
+          fi
+        else
+          HTTP_PORT=30080
+        fi
+        
+        # 检查 HTTPS 端口 (30443)
+        if kubectl get svc --all-namespaces -o json | grep -q '"nodePort": 30443'; then
+          HTTPS_PORT=$(kubectl get svc --all-namespaces -o json | jq '.items[].spec.ports[] | select(.nodePort) | .nodePort' | sort -n | grep -A1 30443 | tail -n1)
+          if [ -z "$HTTPS_PORT" ]; then
+            HTTPS_PORT=30444
+          fi
+        else
+          HTTPS_PORT=30443
+        fi
+        
+        echo "选择的 HTTP 端口: $HTTP_PORT"
+        echo "选择的 HTTPS 端口: $HTTPS_PORT"
+        
+        # 保存端口信息供后续使用
+        echo "http_port=$HTTP_PORT" > /tmp/ingress_ports
+        echo "https_port=$HTTPS_PORT" >> /tmp/ingress_ports
+      register: port_check
+
+    - name: 显示端口检查结果
+      debug:
+        msg: "{{ port_check.stdout_lines }}"
+
+    - name: 读取端口配置
+      shell: cat /tmp/ingress_ports
+      register: ports_file
+
+    - name: 设置端口变量
+      set_fact:
+        http_port: "{{ ports_file.stdout_lines[0] | regex_replace('http_port=', '') }}"
+        https_port: "{{ ports_file.stdout_lines[1] | regex_replace('https_port=', '') }}"
+
     - name: 安装 Nginx Ingress Controller（带监控）
       shell: |
         helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
           --namespace {{ ingress_nginx_namespace }} \
           --set controller.service.type=NodePort \
-          --set controller.service.nodePorts.http=30080 \
-          --set controller.service.nodePorts.https=30443 \
+          --set controller.service.nodePorts.http={{ http_port }} \
+          --set controller.service.nodePorts.https={{ https_port }} \
           --set controller.metrics.enabled=true \
           --set controller.metrics.serviceMonitor.enabled=true \
           --set controller.metrics.serviceMonitor.additionalLabels.release=prometheus \
@@ -86,8 +131,8 @@
         helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
           --namespace {{ ingress_nginx_namespace }} \
           --set controller.service.type=NodePort \
-          --set controller.service.nodePorts.http=30080 \
-          --set controller.service.nodePorts.https=30443 \
+          --set controller.service.nodePorts.http={{ http_port }} \
+          --set controller.service.nodePorts.https={{ https_port }} \
           --wait
       when: prometheus_check.stdout == "not found"
 
