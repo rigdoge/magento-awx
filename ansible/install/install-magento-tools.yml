@@ -1,0 +1,219 @@
+---
+- name: 安装 Magento 自动化工具
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('default') }}"
+    use_tools_version: "{{ tools_version | default('1.0.0') }}"
+  tasks:
+    - name: 创建命名空间
+      shell: |
+        if [ "{{ use_namespace }}" != "default" ]; then
+          echo "=== 创建命名空间 {{ use_namespace }} ==="
+          /usr/local/bin/k3s kubectl create namespace {{ use_namespace }} || true
+        fi
+      register: namespace_result
+
+    - name: 创建 Magento 工具 ConfigMap
+      copy:
+        dest: /tmp/magento-tools.yaml
+        content: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: magento-tools-scripts
+            namespace: {{ use_namespace }}
+          data:
+            install.sh: |
+              #!/bin/bash
+              # Magento 安装脚本
+              magento setup:install \
+                --base-url=$MAGENTO_URL \
+                --db-host=$DB_HOST \
+                --db-name=$DB_NAME \
+                --db-user=$DB_USER \
+                --db-password=$DB_PASSWORD \
+                --admin-firstname=$ADMIN_FIRSTNAME \
+                --admin-lastname=$ADMIN_LASTNAME \
+                --admin-email=$ADMIN_EMAIL \
+                --admin-user=$ADMIN_USERNAME \
+                --admin-password=$ADMIN_PASSWORD \
+                --language=$LANGUAGE \
+                --currency=$CURRENCY \
+                --timezone=$TIMEZONE \
+                --use-rewrites=1 \
+                --search-engine=opensearch \
+                --opensearch-host=$OPENSEARCH_HOST \
+                --opensearch-port=$OPENSEARCH_PORT \
+                --cache-backend=redis \
+                --cache-backend-redis-server=$REDIS_HOST \
+                --cache-backend-redis-port=$REDIS_PORT \
+                --cache-backend-redis-db=0 \
+                --page-cache=redis \
+                --page-cache-redis-server=$REDIS_HOST \
+                --page-cache-redis-port=$REDIS_PORT \
+                --page-cache-redis-db=1 \
+                --session-save=redis \
+                --session-save-redis-host=$REDIS_HOST \
+                --session-save-redis-port=$REDIS_PORT \
+                --session-save-redis-db=2 \
+                --amqp-host=$RABBITMQ_HOST \
+                --amqp-port=$RABBITMQ_PORT \
+                --amqp-user=$RABBITMQ_USER \
+                --amqp-password=$RABBITMQ_PASSWORD
+
+            backup.sh: |
+              #!/bin/bash
+              # 数据库备份脚本
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              BACKUP_DIR="/var/www/html/var/backups"
+              
+              # 创建备份目录
+              mkdir -p $BACKUP_DIR
+              
+              # 数据库备份
+              mysqldump -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME > $BACKUP_DIR/db_$TIMESTAMP.sql
+              
+              # 代码备份
+              tar -czf $BACKUP_DIR/code_$TIMESTAMP.tar.gz /var/www/html/app /var/www/html/pub
+              
+              # 媒体文件备份
+              tar -czf $BACKUP_DIR/media_$TIMESTAMP.tar.gz /var/www/html/pub/media
+              
+              # 清理旧备份（保留最近7天）
+              find $BACKUP_DIR -type f -mtime +7 -exec rm {} \;
+
+            cache.sh: |
+              #!/bin/bash
+              # 缓存管理脚本
+              
+              case "$1" in
+                "clean")
+                  magento cache:clean
+                  ;;
+                "flush")
+                  magento cache:flush
+                  ;;
+                "status")
+                  magento cache:status
+                  ;;
+                "enable")
+                  magento cache:enable
+                  ;;
+                "disable")
+                  magento cache:disable
+                  ;;
+                *)
+                  echo "Usage: $0 {clean|flush|status|enable|disable}"
+                  exit 1
+                  ;;
+              esac
+
+            deploy.sh: |
+              #!/bin/bash
+              # 部署脚本
+              
+              # 启用维护模式
+              magento maintenance:enable
+              
+              # 清理缓存
+              magento cache:clean
+              
+              # 部署静态内容
+              magento setup:static-content:deploy -f
+              
+              # 编译代码
+              magento setup:di:compile
+              
+              # 升级数据库架构和数据
+              magento setup:upgrade
+              
+              # 重建索引
+              magento indexer:reindex
+              
+              # 关闭维护模式
+              magento maintenance:disable
+
+            cron.sh: |
+              #!/bin/bash
+              # 定时任务管理脚本
+              
+              case "$1" in
+                "install")
+                  magento cron:install
+                  ;;
+                "run")
+                  magento cron:run
+                  ;;
+                "remove")
+                  magento cron:remove
+                  ;;
+                "status")
+                  magento cron:status
+                  ;;
+                *)
+                  echo "Usage: $0 {install|run|remove|status}"
+                  exit 1
+                  ;;
+              esac
+
+            monitor.sh: |
+              #!/bin/bash
+              # 监控脚本
+              
+              # 检查系统状态
+              magento sys:check
+              
+              # 检查索引状态
+              magento indexer:status
+              
+              # 检查缓存状态
+              magento cache:status
+              
+              # 检查队列状态
+              magento queue:status
+              
+              # 检查 cron 任务状态
+              magento cron:status
+
+    - name: 创建 Magento 工具 Pod
+      copy:
+        dest: /tmp/magento-tools-pod.yaml
+        content: |
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: magento-tools
+            namespace: {{ use_namespace }}
+            labels:
+              app: magento-tools
+          spec:
+            containers:
+            - name: magento-tools
+              image: php:8.3-cli
+              command: ["sleep", "infinity"]
+              volumeMounts:
+              - name: scripts
+                mountPath: /usr/local/bin/magento-tools
+              - name: magento
+                mountPath: /var/www/html
+            volumes:
+            - name: scripts
+              configMap:
+                name: magento-tools-scripts
+                defaultMode: 0755
+            - name: magento
+              persistentVolumeClaim:
+                claimName: magento-data
+
+    - name: 应用配置
+      shell: |
+        echo "=== 应用 Magento 工具配置 ==="
+        /usr/local/bin/k3s kubectl apply -f /tmp/magento-tools.yaml -f /tmp/magento-tools-pod.yaml
+      register: apply_result
+
+    - name: 等待 Pod 创建完成
+      shell: |
+        echo "=== 等待 Pod 创建完成 ==="
+        /usr/local/bin/k3s kubectl wait --for=condition=Ready pod/magento-tools -n {{ use_namespace }} --timeout=300s
+      register: wait_result 
