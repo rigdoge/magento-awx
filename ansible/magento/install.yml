@@ -2,24 +2,40 @@
 - name: 安装 Magento 2 环境
   hosts: localhost
   gather_facts: false
+  vars:
+    namespace: chen  # 默认命名空间
   tasks:
     - name: 步骤 1 - 安装 PHP-FPM
       include_tasks: php/step-1-install-php-fpm.yml
+      vars:
+        target_namespace: "{{ namespace }}"
 
     - name: 步骤 2 - 安装 MySQL
       include_tasks: mysql/step-2-install-mysql.yml
+      vars:
+        target_namespace: "{{ namespace }}"
 
     - name: 步骤 3 - 安装 Redis
       include_tasks: redis/step-3-install-redis.yml
+      vars:
+        target_namespace: "{{ namespace }}"
 
     - name: 步骤 4 - 安装 OpenSearch
       include_tasks: opensearch/step-4-install-opensearch.yml
+      vars:
+        target_namespace: "{{ namespace }}"
 
     - name: 步骤 5 - 安装 RabbitMQ
       include_tasks: rabbitmq/step-5-install-rabbitmq.yml
+      vars:
+        target_namespace: "{{ namespace }}"
 
     - name: 步骤 6 - 安装 Varnish
       include_tasks: varnish/step-6-install-varnish.yml
+      vars:
+        target_namespace: "{{ namespace }}"
 
     - name: 步骤 7 - 安装 Magento 2
-      include_tasks: magento/step-7-install-magento.yml 
+      include_tasks: magento/step-7-install-magento.yml
+      vars:
+        target_namespace: "{{ namespace }}" 

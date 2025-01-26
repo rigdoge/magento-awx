@@ -2,6 +2,8 @@
 - name: 安装 Magento 2 PHP-FPM
   hosts: localhost
   gather_facts: false
+  vars:
+    target_namespace: chen  # 可以被外部变量覆盖
   tasks:
     - name: 创建 PHP-FPM Dockerfile
       copy:
@@ -95,7 +97,7 @@
           kind: Deployment
           metadata:
             name: php-fpm
-            namespace: chen
+            namespace: "{{ target_namespace }}"
           spec:
             replicas: 1
             selector:
@@ -127,7 +129,7 @@
           kind: Service
           metadata:
             name: php-fpm
-            namespace: chen
+            namespace: "{{ target_namespace }}"
           spec:
             selector:
               app: php-fpm
@@ -138,7 +140,7 @@
     - name: 等待 PHP-FPM Pod 就绪
       kubernetes.core.k8s_info:
         kind: Pod
-        namespace: chen
+        namespace: "{{ target_namespace }}"
         label_selectors:
           - app=php-fpm
         field_selectors:

@@ -3,6 +3,7 @@
   hosts: localhost
   gather_facts: false
   vars:
+    target_namespace: chen  # 可以被外部变量覆盖
     mysql_root_password: magento2root
     mysql_database: magento
     mysql_user: magento
@@ -16,7 +17,7 @@
           kind: PersistentVolumeClaim
           metadata:
             name: mysql-pvc
-            namespace: chen
+            namespace: "{{ target_namespace }}"
           spec:
             accessModes:
               - ReadWriteOnce
@@ -32,7 +33,7 @@
           kind: Secret
           metadata:
             name: mysql-secret
-            namespace: chen
+            namespace: "{{ target_namespace }}"
           type: Opaque
           stringData:
             root-password: "{{ mysql_root_password }}"
@@ -48,7 +49,7 @@
           kind: Deployment
           metadata:
             name: mysql
-            namespace: chen
+            namespace: "{{ target_namespace }}"
           spec:
             replicas: 1
             selector:
@@ -108,7 +109,7 @@
           kind: Service
           metadata:
             name: mysql
-            namespace: chen
+            namespace: "{{ target_namespace }}"
           spec:
             selector:
               app: mysql
@@ -119,7 +120,7 @@
     - name: 等待 MySQL Pod 就绪
       kubernetes.core.k8s_info:
         kind: Pod
-        namespace: chen
+        namespace: "{{ target_namespace }}"
         label_selectors:
           - app=mysql
         field_selectors:
