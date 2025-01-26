@@ -72,14 +72,12 @@
       shell: |
         echo "=== 检查端口占用 ==="
         
-        # 定义已知服务端口
-        declare -A KNOWN_PORTS=(
-          ["awx_http"]="30180"
-          ["awx_https"]="30443"
-        )
+        # 已知的 AWX 端口
+        AWX_HTTP_PORT=30180
+        AWX_HTTPS_PORT=30443
         
         # 查找可用的 HTTP 端口（31080-31099 范围）
-        for port in {31080..31099}; do
+        for port in $(seq 31080 31099); do
           if ! kubectl get svc --all-namespaces -o json | grep -q "\"nodePort\": $port"; then
             HTTP_PORT=$port
             break
@@ -87,7 +85,7 @@
         done
         
         # 查找可用的 HTTPS 端口（31443-31462 范围）
-        for port in {31443..31462}; do
+        for port in $(seq 31443 31462); do
           if ! kubectl get svc --all-namespaces -o json | grep -q "\"nodePort\": $port"; then
             HTTPS_PORT=$port
             break
