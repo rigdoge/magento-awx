@@ -1,11 +1,11 @@
 ---
 - name: 备份 AWX
-  hosts: localhost
+  hosts: KS-1
   gather_facts: yes
   vars:
     timestamp: "{{ lookup('pipe', 'date +%Y%m%d') }}"
     backup_dir: "/backup/awx"
-    namespace: "awx"
+    use_namespace: "awx"
   
   tasks:
     - name: 创建备份目录
@@ -13,23 +13,20 @@
         path: "{{ backup_dir }}/{{ timestamp }}"
         state: directory
         mode: '0755'
-      become: yes
 
     - name: 备份 AWX 资源
       shell: |
-        kubectl get awx awx-demo -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/awx-cr.yaml
-        kubectl get all -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/resources.yaml
-        kubectl get secret -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/secrets.yaml
-        kubectl get configmap -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/configmaps.yaml
-        kubectl get pvc -n {{ namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/pvcs.yaml
+        kubectl get awx awx-demo -n {{ use_namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/awx-cr.yaml
+        kubectl get all -n {{ use_namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/resources.yaml
+        kubectl get secret -n {{ use_namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/secrets.yaml
+        kubectl get configmap -n {{ use_namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/configmaps.yaml
+        kubectl get pvc -n {{ use_namespace }} -o yaml > {{ backup_dir }}/{{ timestamp }}/pvcs.yaml
       register: resources_result
-      become: yes
 
     - name: 显示所有 Pod 标签
       shell: |
-        kubectl get pods -n {{ namespace }} --show-labels
+        kubectl get pods -n {{ use_namespace }} --show-labels
       register: pod_labels
-      become: yes
 
     - name: 显示标签信息
       debug:
@@ -37,9 +34,8 @@
 
     - name: 获取 PostgreSQL Pod 名称
       shell: |
-        kubectl get pod -n {{ namespace }} -l app.kubernetes.io/name=postgres-13 -o jsonpath='{.items[0].metadata.name}'
+        kubectl get pod -n {{ use_namespace }} -l app.kubernetes.io/name=postgres-13 -o jsonpath='{.items[0].metadata.name}'
       register: pg_pod
-      become: yes
 
     - name: 显示 Pod 名称
       debug:
@@ -48,23 +44,19 @@
 
     - name: 备份数据库
       shell: |
-        kubectl exec -n {{ namespace }} {{ pg_pod.stdout }} -- pg_dumpall -U awx > {{ backup_dir }}/{{ timestamp }}/db_dump.sql
+        kubectl exec -n {{ use_namespace }} {{ pg_pod.stdout }} -- pg_dumpall -U awx > {{ backup_dir }}/{{ timestamp }}/db_dump.sql
       register: db_result
-      become: yes
 
     - name: 压缩备份文件
       shell: |
         cd {{ backup_dir }} && tar -czf awx-backup-{{ timestamp }}.tar.gz {{ timestamp }}
       register: tar_result
-      become: yes
 
     - name: 清理临时文件
       file:
         path: "{{ backup_dir }}/{{ timestamp }}"
         state: absent
-      become: yes
 
     - name: 清理旧备份
       shell: |
-        find {{ backup_dir }} -name "awx-backup-*.tar.gz" -mtime +7 -delete
-      become: yes 
+        find {{ backup_dir }} -name "awx-backup-*.tar.gz" -mtime +7 -delete 
