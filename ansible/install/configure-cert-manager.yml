@@ -87,6 +87,27 @@
     - name: 应用 ClusterIssuer
       shell: kubectl apply -f /tmp/cluster-issuer.yaml
 
+    - name: 检查 Ingress NodePort
+      shell: |
+        echo "检查 Ingress NodePort..."
+        INGRESS_HTTP_PORT=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+        INGRESS_HTTPS_PORT=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
+        echo "HTTP Port: $INGRESS_HTTP_PORT"
+        echo "HTTPS Port: $INGRESS_HTTPS_PORT"
+        
+        # 保存端口信息到变量
+        echo "$INGRESS_HTTP_PORT"
+      register: http_port_check
+
+    - name: 设置端口变量
+      set_fact:
+        ingress_http_port: "{{ http_port_check.stdout }}"
+
+    - name: 显示端口信息
+      debug:
+        msg: 
+          - "HTTP Port: {{ ingress_http_port }}"
+
     - name: 配置 AWX Ingress
       copy:
         dest: /tmp/awx-ingress.yaml
@@ -103,6 +124,15 @@
               nginx.ingress.kubernetes.io/proxy-body-size: "64m"
               nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
               nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+              nginx.ingress.kubernetes.io/use-port-in-redirects: "true"
+              nginx.ingress.kubernetes.io/configuration-snippet: |
+                location /.well-known/acme-challenge/ {
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_pass http://localhost:{{ ingress_http_port }};
+                }
           spec:
             tls:
             - hosts:
