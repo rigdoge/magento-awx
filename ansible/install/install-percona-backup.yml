@@ -10,7 +10,7 @@
     inc_backup_schedule: "{{ inc_schedule | default('0 */4 * * *') }}"  # 默认每4小时
     backup_image: "percona/percona-xtrabackup:8.0"
     k3s_bin: "/usr/local/bin/k3s"
-    mysql_root_password: "{{ lookup('env', 'MYSQL_ROOT_PASSWORD') | default('magento123') }}"
+    mysql_root_password: "{{ lookup('env', 'MYSQL_ROOT_PASSWORD') | default('magento123', true) }}"
     
   tasks:
     - name: 显示变量
@@ -22,6 +22,7 @@
     - name: 创建临时 Secret 文件
       copy:
         dest: "/tmp/secret.yaml"
+        mode: '0600'
         content: |
           apiVersion: v1
           kind: Secret
@@ -30,7 +31,7 @@
             namespace: {{ use_namespace }}
           type: Opaque
           stringData:
-            root-password: "{{ mysql_root_password }}"
+            root-password: {{ mysql_root_password }}
 
     - name: 应用 Secret
       command: "{{ k3s_bin }} kubectl apply -f /tmp/secret.yaml"
