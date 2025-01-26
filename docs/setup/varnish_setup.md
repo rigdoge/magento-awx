@@ -51,7 +51,61 @@ ansible-playbook ansible/install/install-varnish.yml -e "namespace=magento nodep
 - 图片文件：缓存 48 小时
 - 其他内容：缓存 1 小时
 
-### 3.3 健康检查配置
+### 3.3 多站点配置
+```vcl
+# 在 vcl_recv 中添加多站点配置
+sub vcl_recv {
+    # 根据域名选择后端
+    if (req.http.host ~ "^site1\.example\.com$") {
+        set req.backend_hint = site1;
+    } elsif (req.http.host ~ "^site2\.example\.com$") {
+        set req.backend_hint = site2;
+    } elsif (req.http.host ~ "^site3\.example\.com$") {
+        set req.backend_hint = site3;
+    } elsif (req.http.host ~ "^site4\.example\.com$") {
+        set req.backend_hint = site4;
+    }
+
+    # 为不同站点设置不同的缓存键
+    hash_data(req.http.host);
+}
+
+# 定义多个后端
+backend site1 {
+    .host = "site1-backend";
+    .port = "80";
+}
+
+backend site2 {
+    .host = "site2-backend";
+    .port = "80";
+}
+
+backend site3 {
+    .host = "site3-backend";
+    .port = "80";
+}
+
+backend site4 {
+    .host = "site4-backend";
+    .port = "80";
+}
+```
+
+### 3.4 多站点资源分配
+- 单实例多站点（推荐）：
+  - 总内存：4GB 可服务多个站点
+  - 通过 VCL 配置区分站点
+  - 缓存键包含域名，避免冲突
+  - 可动态分配内存给不同站点
+
+- 多实例方案（不推荐）：
+  - 每个站点独立实例
+  - 需要更多系统资源
+  - 管理维护成本高
+  - 建议仅在特殊需求时使用
+
+### 3.5 健康检查配置
 ```vcl
 .probe = {
     .url = "/health_check.php";
