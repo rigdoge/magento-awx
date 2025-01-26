@@ -1,0 +1,92 @@
+---
+- name: 创建 Magento 2 PHP-FPM Pool
+  hosts: localhost
+  gather_facts: false
+  vars:
+    site_name: chen  # 站点名称，可以被外部变量覆盖
+    php_fpm_namespace: magento-shared  # PHP-FPM 所在的命名空间
+  tasks:
+    - name: 创建 PHP-FPM Pool ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ site_name }}-php-fpm-pool"
+            namespace: "{{ php_fpm_namespace }}"
+          data:
+            "{{ site_name }}.conf": |
+              [{{ site_name }}]
+              user = www-data
+              group = www-data
+              listen = /var/run/php-fpm/{{ site_name }}.sock
+              listen.owner = www-data
+              listen.group = www-data
+              listen.mode = 0660
+              
+              ; Process Manager Configuration
+              pm = dynamic
+              pm.max_children = 50
+              pm.start_servers = 5
+              pm.min_spare_servers = 5
+              pm.max_spare_servers = 35
+              pm.max_requests = 500
+              
+              ; PHP Settings
+              php_admin_value[memory_limit] = 4G
+              php_admin_value[max_execution_time] = 1800
+              php_admin_value[date.timezone] = UTC
+              php_admin_value[error_log] = /proc/self/fd/2
+              php_admin_flag[log_errors] = on
+              
+              ; Session Configuration
+              php_value[session.save_handler] = redis
+              php_value[session.save_path] = "tcp://redis:6379/1"
+              
+              ; Magento Specific Settings
+              php_value[max_input_vars] = 10000
+              php_value[post_max_size] = 64M
+              php_value[upload_max_filesize] = 64M
+              php_value[realpath_cache_size] = 10M
+              php_value[realpath_cache_ttl] = 7200
+
+    - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: php-fpm
+            namespace: "{{ php_fpm_namespace }}"
+          spec:
+            template:
+              spec:
+                containers:
+                - name: php-fpm
+                  volumeMounts:
+                  - name: "{{ site_name }}-pool-config"
+                    mountPath: "/usr/local/etc/php-fpm.d/{{ site_name }}.conf"
+                    subPath: "{{ site_name }}.conf"
+                volumes:
+                - name: "{{ site_name }}-pool-config"
+                  configMap:
+                    name: "{{ site_name }}-php-fpm-pool"
+
+    - name: 等待 PHP-FPM Pod 重启
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ php_fpm_namespace }}"
+        label_selectors:
+          - app=php-fpm
+        field_selectors:
+          - status.phase=Running
+      register: php_fpm_pod
+      until: php_fpm_pod.resources | length > 0
+      retries: 30
+      delay: 10
+
+    - name: 显示 PHP-FPM Pod 状态
+      debug:
+        msg: "PHP-FPM Pool {{ site_name }} 已创建并配置" 
