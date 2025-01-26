@@ -7,7 +7,11 @@
 ### 1.1 安装命令
 
 ```bash
-ansible-playbook ansible/install/install-redis-base.yml -e "namespace=magento memory=4Gi"
+# 使用 StatefulSet 安装 Redis
+ansible-playbook ansible/install/install-redis-statefulset.yml -e "namespace=magento memory=4Gi"
+
+# 卸载 Redis
+ansible-playbook ansible/install/install-redis-statefulset.yml -e "namespace=magento action=uninstall"
 ```
 
 ### 1.2 参数说明
@@ -15,13 +19,15 @@ ansible-playbook ansible/install/install-redis-base.yml -e "namespace=magento me
 - `namespace`: Kubernetes 命名空间（默认：default）
 - `memory`: Redis 使用的内存大小（默认：1Gi）
 - `nodeport`: 服务暴露的节点端口（默认：30379）
+- `action`: 操作类型（install/uninstall，默认：install）
 
 ### 1.3 安装内容
 
-- Redis 7.2 容器
+- Redis 7.2 StatefulSet
 - 持久化存储（10Gi）
 - NodePort 类型的 Service
 - 基础配置的 ConfigMap
+- 自动化的 PVC 管理
 
 ## 2. 站点配置
 
@@ -58,7 +64,7 @@ ansible-playbook ansible/install/configure-redis-site.yml \
 
 ```bash
 # 安装 Redis，分配 4GB 内存
-ansible-playbook ansible/install/install-redis-base.yml \
+ansible-playbook ansible/install/install-redis-statefulset.yml \
   -e "namespace=magento" \
   -e "memory=4Gi"
 ```
@@ -83,12 +89,16 @@ ansible-playbook ansible/install/configure-redis-site.yml \
 
 ### 4.1 基础配置
 
-- 最大内存：由 memory 参数指定
+- 最大内存：由 memory 参数指定（自动转换为字节）
 - 内存策略：allkeys-lru（删除最近最少使用的键）
-- 持久化：RDB
-  * 900秒内至少1个变更
-  * 300秒内至少10个变更
-  * 60秒内至少10000个变更
+- 持久化：AOF
+  * appendonly yes
+  * appendfsync everysec
+  * 存储目录：/data
+- 网络配置：
+  * bind 0.0.0.0
+  * protected-mode no
+  * daemonize no
 
 ### 4.2 安全配置
 
@@ -168,4 +178,22 @@ redis-cli -h redis -p 6379 INFO keyspace
 ### 7.3 性能问题
 - 监控响应时间
 - 检查慢查询日志
-- 优化数据结构 
+- 优化数据结构
+
+## 8. StatefulSet 特性
+
+### 8.1 优势
+- 稳定的网络标识
+- 有序部署和扩展
+- 自动化的 PVC 管理
+- 更好的数据持久性
+
+### 8.2 注意事项
+- PVC 不会自动删除
+- 需要按顺序删除资源
+- 建议使用卸载脚本
+
+### 8.3 监控建议
+- 监控 StatefulSet 状态
+- 检查 PVC 状态
+- 观察 Pod 事件 
