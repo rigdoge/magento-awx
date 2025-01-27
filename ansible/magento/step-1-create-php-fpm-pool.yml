@@ -9,10 +9,26 @@
     php_fpm_namespace: magento-shared  # PHP-FPM 所在的命名空间
   tasks:
     - name: 获取 Kubernetes 认证信息
-      kubernetes.core.k8s_auth:
-        host: "{{ k8s_host }}"  # Kubernetes API 地址
-        api_key: "{{ k8s_api_key }}"  # API 令牌
-        validate_certs: "{{ k8s_validate_certs | default(true) }}"
+      k8s:
+        kubeconfig: "{{ k8s_config }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: php-fpm-pool-config
+            namespace: "{{ namespace }}"
+          data:
+            pool.conf: |
+              [www]
+              user = www-data
+              group = www-data
+              listen = 9000
+              pm = dynamic
+              pm.max_children = 5
+              pm.start_servers = 2
+              pm.min_spare_servers = 1
+              pm.max_spare_servers = 3
       register: k8s_auth_results
       no_log: true
 
