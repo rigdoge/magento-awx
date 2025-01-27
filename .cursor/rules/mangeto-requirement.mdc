@@ -29,6 +29,7 @@ globs:
    base setup
 
 7. php-8.3-fpm
+   memory_limit = 4G
    
 8. opensearch
    base setup
