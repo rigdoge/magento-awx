@@ -59,9 +59,36 @@
           - "连接状态: {{ not (all_namespaces.failed | default(true)) }}"
       when: all_namespaces is defined
 
+    - name: 创建命名空间
+      kubernetes.core.k8s:
+        host: "{{ k8s_connection.host }}"
+        api_key: "{{ k8s_connection.api_key }}"
+        validate_certs: "{{ k8s_connection.validate_certs }}"
+        ca_cert: "{{ k8s_connection.ca_cert }}"
+        proxy: "{{ k8s_connection.proxy }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ php_fpm_namespace }}"
+            labels:
+              name: "{{ php_fpm_namespace }}"
+      register: create_namespace_result
+      ignore_errors: yes
+      when: not (namespace_exists | default(false))
+
+    - name: 显示命名空间创建结果
+      debug:
+        msg: 
+          - "状态: {{ create_namespace_result.failed | default(false) }}"
+          - "错误: {{ create_namespace_result.msg | default('无') }}"
+          - "错误详情: {{ create_namespace_result.module_stderr | default('无') }}"
+      when: create_namespace_result is defined
+
     - name: 设置任务状态
       set_fact:
-        task_failed: "{{ all_namespaces.failed | default(true) or not (namespace_exists | default(false)) }}"
+        task_failed: "{{ all_namespaces.failed | default(true) or (create_namespace_result.failed | default(false) if not (namespace_exists | default(false)) else false) }}"
 
     - name: 如果 Kubernetes 连接失败则退出
       fail:
@@ -76,6 +103,10 @@
           错误信息：{{ all_namespaces.msg | default('无') }}
           错误详情：{{ all_namespaces.module_stderr | default('无') }}
           可用命名空间：{{ (all_namespaces.resources | default([])) | map(attribute='metadata.name') | list | to_nice_json }}
+          
+          命名空间创建结果：
+          状态：{{ create_namespace_result.failed | default(false) if create_namespace_result is defined else '未尝试创建' }}
+          错误：{{ create_namespace_result.msg | default('无') if create_namespace_result is defined else '无' }}
       when: task_failed
 
     - name: 创建 PHP-FPM Pool ConfigMap
