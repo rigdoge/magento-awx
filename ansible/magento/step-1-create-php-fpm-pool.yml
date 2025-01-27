@@ -23,6 +23,7 @@
           - "Namespace: {{ php_fpm_namespace }}"
           - "Site Name: {{ site_name }}"
           - "验证证书: {{ k8s_validate_certs | default(false) }}"
+          - "API Key: {{ k8s_api_key | truncate(10, True, '...', 0) if k8s_api_key is defined else '未设置' }}"
 
     - name: 验证 Kubernetes 连接
       kubernetes.core.k8s_raw:
@@ -35,6 +36,7 @@
         ca_cert: "{{ k8s_connection.ca_cert }}"
         proxy: "{{ k8s_connection.proxy }}"
         timeout: "{{ k8s_connection.timeout }}"
+        method: get
       register: namespace_info
       ignore_errors: yes
 
@@ -43,7 +45,7 @@
         msg: 
           - "状态: {{ namespace_info.failed | default(false) }}"
           - "错误: {{ namespace_info.msg | default('无') }}"
-          - "输出: {{ namespace_info.result | default({}) }}"
+          - "输出: {{ namespace_info.result | default({}) | to_nice_json }}"
       when: namespace_info is defined
 
     - name: 设置任务状态
@@ -55,10 +57,10 @@
         msg: |
           Kubernetes 连接失败，请检查以下信息：
           1. API 服务器地址: {{ k8s_host }}
-          2. Token 是否有效
+          2. Token 是否有效: {{ k8s_api_key | truncate(10, True, '...', 0) if k8s_api_key is defined else '未设置' }}
           3. 命名空间 {{ php_fpm_namespace }} 是否存在
           4. 网络连接是否正常
-          5. 证书验证设置
+          5. 证书验证设置: {{ k8s_validate_certs | default(false) }}
           
           错误信息：{{ namespace_info.msg | default('无') }}
           详细信息：{{ namespace_info | to_nice_json }}
