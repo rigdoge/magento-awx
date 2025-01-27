@@ -9,7 +9,7 @@
     php_fpm_namespace: "{{ namespace | default('magento-shared') }}"  # PHP-FPM 所在的命名空间，可以被外部变量覆盖
     k8s_auth:
       host: "{{ k8s_host | default('https://kubernetes.default.svc') }}"
-      api_key: "{{ k8s_api_key }}"  # 直接使用 AWX 凭证中的 token
+      api_key: "{{ k8s_api_key }}"
       validate_certs: "{{ k8s_validate_certs | default(false) }}"
 
   tasks:
