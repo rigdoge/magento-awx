@@ -1,0 +1,25 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: awx-operator-cluster-role
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "pods", "services", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: awx-operator-cluster-role-binding
+subjects:
+  - kind: ServiceAccount
+    name: awx-demo
+    namespace: awx
+roleRef:
+  kind: ClusterRole
+  name: awx-operator-cluster-role
+  apiGroup: rbac.authorization.k8s.io 
