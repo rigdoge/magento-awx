@@ -192,6 +192,16 @@
                 containers:
                   - name: php-fpm
                     image: php:8.3-fpm
+                    resources:
+                      requests:
+                        cpu: "200m"
+                        memory: "256Mi"
+                      limits:
+                        cpu: "1"
+                        memory: "4Gi"
+                    securityContext:
+                      runAsUser: 33  # www-data 的 UID
+                      runAsGroup: 33  # www-data 的 GID
                     volumeMounts:
                       - name: pool-config
                         mountPath: /usr/local/etc/php-fpm.d/chen.conf
