@@ -17,12 +17,12 @@
           clusters:
           - name: k3s
             cluster:
-              server: "https://10.43.0.1:443"
-              insecure-skip-tls-verify: true
+              server: https://kubernetes.default.svc
+              certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
           users:
           - name: awx
             user:
-              token: "{{ k8s_api_key }}"
+              tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
           contexts:
           - name: default
             context:
@@ -36,11 +36,11 @@
     - name: 显示连接信息
       debug:
         msg: 
-          - "Host: https://10.43.0.1:443"
+          - "Host: https://kubernetes.default.svc"
           - "Namespace: {{ php_fpm_namespace }}"
           - "Site Name: {{ site_name }}"
-          - "验证证书: false"
-          - "API Key: {{ k8s_api_key | truncate(10, True, '...', 0) if k8s_api_key is defined else '未设置' }}"
+          - "证书: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          - "Token: /var/run/secrets/kubernetes.io/serviceaccount/token"
           - "Kubeconfig: {{ kubeconfig_result.dest }}"
 
     - name: 显示 kubeconfig 内容
@@ -109,11 +109,11 @@
       fail:
         msg: |
           Kubernetes 连接失败，请检查以下信息：
-          1. API 服务器地址: https://10.43.0.1:443
-          2. Token 是否有效: {{ k8s_api_key | truncate(10, True, '...', 0) if k8s_api_key is defined else '未设置' }}
+          1. API 服务器地址: https://kubernetes.default.svc
+          2. Token 是否有效: /var/run/secrets/kubernetes.io/serviceaccount/token
           3. 命名空间 {{ php_fpm_namespace }} {{ '存在' if (namespace_exists | default(false)) else '不存在' }}
           4. 网络连接是否正常
-          5. 证书验证设置: false
+          5. 证书验证设置: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
           
           错误信息：{{ all_namespaces.msg | default('无') }}
           错误详情：{{ all_namespaces.module_stderr | default('无') }}
