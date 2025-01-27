@@ -191,8 +191,17 @@
                   - name: php-fpm
                     volumeMounts:
                       - name: pool-config
-                        mountPath: /usr/local/etc/php-fpm.d/{{ site_name }}.conf
+                        mountPath: /usr/local/etc/php-fpm.d/chen.conf
                         subPath: pool.conf
+        register: deployment_update
+        ignore_errors: true
+
+    - name: 显示 Deployment 更新结果
+      debug:
+        msg:
+          - "状态: {{ deployment_update.failed | default(false) }}"
+          - "错误: {{ deployment_update.msg | default('无') }}"
+          - "资源: {{ deployment_update.result | default('无') }}"
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
