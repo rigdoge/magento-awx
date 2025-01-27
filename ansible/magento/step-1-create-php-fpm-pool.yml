@@ -7,10 +7,11 @@
   vars:
     site_name: chen  # 站点名称，可以被外部变量覆盖
     php_fpm_namespace: magento-shared  # PHP-FPM 所在的命名空间
-    k8s_auth:
-      host: "{{ k8s_host | default('https://kubernetes.default.svc') }}"
-      api_key: "{{ k8s_api_key }}"
-      validate_certs: "{{ k8s_validate_certs | default(false) }}"
+
+  environment:
+    K8S_AUTH_HOST: "{{ k8s_host | default('https://kubernetes.default.svc') }}"
+    K8S_AUTH_API_KEY: "{{ k8s_api_key }}"
+    K8S_AUTH_VERIFY_SSL: "{{ k8s_validate_certs | default('false') }}"
 
   tasks:
     - name: 获取 Service Account Token
@@ -22,18 +23,15 @@
     - name: 显示连接信息
       debug:
         msg: 
-          - "Host: {{ k8s_auth.host }}"
+          - "Host: {{ lookup('env', 'K8S_AUTH_HOST') }}"
           - "Namespace: {{ php_fpm_namespace }}"
           - "Site Name: {{ site_name }}"
-          - "验证证书: {{ k8s_auth.validate_certs }}"
+          - "验证证书: {{ lookup('env', 'K8S_AUTH_VERIFY_SSL') }}"
 
     - name: 验证 Kubernetes 连接
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Namespace
-        host: "{{ k8s_auth.host }}"
-        api_key: "{{ k8s_auth.api_key }}"
-        validate_certs: "{{ k8s_auth.validate_certs }}"
       register: all_namespaces
       ignore_errors: yes
 
@@ -60,9 +58,6 @@
 
     - name: 创建命名空间
       kubernetes.core.k8s:
-        host: "{{ k8s_auth.host }}"
-        api_key: "{{ k8s_auth.api_key }}"
-        validate_certs: "{{ k8s_auth.validate_certs }}"
         state: present
         definition:
           apiVersion: v1
@@ -91,7 +86,7 @@
       fail:
         msg: |
           Kubernetes 连接失败，请检查以下信息：
-          1. API 服务器地址: {{ k8s_auth.host }}
+          1. API 服务器地址: {{ lookup('env', 'K8S_AUTH_HOST') }}
           2. Token 是否有效: /var/run/secrets/kubernetes.io/serviceaccount/token
           3. 命名空间 {{ php_fpm_namespace }} {{ '存在' if (namespace_exists | default(false)) else '不存在' }}
           4. 网络连接是否正常
@@ -108,9 +103,6 @@
 
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
-        host: "{{ k8s_auth.host }}"
-        api_key: "{{ k8s_auth.api_key }}"
-        validate_certs: "{{ k8s_auth.validate_certs }}"
         state: present
         definition:
           apiVersion: v1
@@ -166,9 +158,6 @@
 
     - name: 获取当前 PHP-FPM Deployment
       kubernetes.core.k8s_info:
-        host: "{{ k8s_auth.host }}"
-        api_key: "{{ k8s_auth.api_key }}"
-        validate_certs: "{{ k8s_auth.validate_certs }}"
         api_version: apps/v1
         kind: Deployment
         name: php-fpm
@@ -187,9 +176,6 @@
 
     - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
       kubernetes.core.k8s:
-        host: "{{ k8s_auth.host }}"
-        api_key: "{{ k8s_auth.api_key }}"
-        validate_certs: "{{ k8s_auth.validate_certs }}"
         state: present
         definition:
           apiVersion: apps/v1
@@ -231,9 +217,6 @@
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
-        host: "{{ k8s_auth.host }}"
-        api_key: "{{ k8s_auth.api_key }}"
-        validate_certs: "{{ k8s_auth.validate_certs }}"
         kind: Pod
         namespace: "{{ php_fpm_namespace }}"
         label_selectors:
