@@ -16,21 +16,26 @@
           - "Namespace: {{ php_fpm_namespace }}"
           - "Site Name: {{ site_name }}"
 
-    - name: 获取 Kubernetes 认证信息
-      k8s_auth:
+    - name: 验证 Kubernetes 连接
+      kubernetes.core.k8s_cluster_info:
         host: "{{ k8s_host }}"
         api_key: "{{ k8s_api_key }}"
         validate_certs: "{{ k8s_validate_certs | default(false) }}"
-      register: k8s_auth_results
+      register: k8s_info
+      ignore_errors: yes
 
-    - name: 显示认证信息
+    - name: 显示集群信息
       debug:
-        msg: "认证状态: {{ k8s_auth_results }}"
+        msg: 
+          - "状态: {{ k8s_info.failed | default(false) }}"
+          - "错误: {{ k8s_info.module_stderr | default('无') }}"
+          - "版本: {{ k8s_info.version | default('未知') }}"
+      when: k8s_info is defined
 
-    - name: 验证 Kubernetes 连接
+    - name: 验证命名空间访问
       kubernetes.core.k8s_info:
-        api_key: "{{ k8s_auth_results.api_key }}"
-        host: "{{ k8s_auth_results.host }}"
+        host: "{{ k8s_host }}"
+        api_key: "{{ k8s_api_key }}"
         validate_certs: "{{ k8s_validate_certs | default(false) }}"
         kind: Namespace
         name: "{{ php_fpm_namespace }}"
@@ -47,7 +52,7 @@
 
     - name: 设置任务状态
       set_fact:
-        task_failed: "{{ namespace_info.failed | default(false) }}"
+        task_failed: "{{ k8s_info.failed | default(false) or namespace_info.failed | default(false) }}"
 
     - name: 如果 Kubernetes 连接失败则退出
       fail:
@@ -58,14 +63,14 @@
           3. 命名空间 {{ php_fpm_namespace }} 是否存在
           4. 网络连接是否正常
           
-          认证信息：{{ k8s_auth_results }}
-          错误信息：{{ namespace_info.module_stderr | default('无') }}
+          集群信息：{{ k8s_info | default({}) }}
+          命名空间信息：{{ namespace_info | default({}) }}
       when: task_failed
 
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
         host: "{{ k8s_host }}"
-        api_key: "{{ k8s_auth_results.api_key }}"
+        api_key: "{{ k8s_api_key }}"
         validate_certs: "{{ k8s_validate_certs | default(false) }}"
         state: present
         definition:
@@ -123,7 +128,7 @@
     - name: 获取当前 PHP-FPM Deployment
       kubernetes.core.k8s_info:
         host: "{{ k8s_host }}"
-        api_key: "{{ k8s_auth_results.api_key }}"
+        api_key: "{{ k8s_api_key }}"
         validate_certs: "{{ k8s_validate_certs | default(false) }}"
         api_version: apps/v1
         kind: Deployment
@@ -144,7 +149,7 @@
     - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
       kubernetes.core.k8s:
         host: "{{ k8s_host }}"
-        api_key: "{{ k8s_auth_results.api_key }}"
+        api_key: "{{ k8s_api_key }}"
         validate_certs: "{{ k8s_validate_certs | default(false) }}"
         state: present
         definition:
@@ -188,7 +193,7 @@
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
         host: "{{ k8s_host }}"
-        api_key: "{{ k8s_auth_results.api_key }}"
+        api_key: "{{ k8s_api_key }}"
         validate_certs: "{{ k8s_validate_certs | default(false) }}"
         kind: Pod
         namespace: "{{ php_fpm_namespace }}"
