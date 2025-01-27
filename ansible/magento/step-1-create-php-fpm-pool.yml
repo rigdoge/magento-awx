@@ -18,13 +18,23 @@
 
     - name: 验证 Kubernetes 连接
       kubernetes.core.k8s_info:
+        host: "{{ k8s_host }}"
+        api_key: "{{ k8s_api_key }}"
+        validate_certs: "{{ k8s_validate_certs | default(false) }}"
         kind: Namespace
         name: "{{ php_fpm_namespace }}"
       register: namespace_info
+      ignore_errors: yes
 
     - name: 显示命名空间信息
       debug:
         var: namespace_info
+      when: namespace_info is defined
+
+    - name: 如果命名空间验证失败则显示错误
+      debug:
+        msg: "命名空间验证失败: {{ namespace_info.msg if namespace_info.msg is defined else 'Unknown error' }}"
+      when: namespace_info is failed
 
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
