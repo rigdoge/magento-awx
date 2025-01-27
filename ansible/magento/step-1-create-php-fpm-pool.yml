@@ -26,7 +26,7 @@
           - "API Key: {{ k8s_api_key | truncate(10, True, '...', 0) if k8s_api_key is defined else '未设置' }}"
 
     - name: 验证 Kubernetes 连接
-      kubernetes.core.k8s_raw:
+      kubernetes.core.k8s:
         api_version: v1
         kind: Namespace
         name: "{{ php_fpm_namespace }}"
@@ -36,7 +36,7 @@
         ca_cert: "{{ k8s_connection.ca_cert }}"
         proxy: "{{ k8s_connection.proxy }}"
         timeout: "{{ k8s_connection.timeout }}"
-        method: get
+        state: present
       register: namespace_info
       ignore_errors: yes
 
