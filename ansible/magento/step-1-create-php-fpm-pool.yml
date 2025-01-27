@@ -191,7 +191,7 @@
                     emptyDir: {}
                 containers:
                   - name: php-fpm
-                    image: registry.cn-hangzhou.aliyuncs.com/rigdoge/php-fpm:8.3
+                    image: docker.io/library/php:8.3-fpm
                     resources:
                       requests:
                         cpu: "200m"
@@ -209,6 +209,15 @@
                         subPath: pool.conf
                       - name: run-php
                         mountPath: /run/php
+                    lifecycle:
+                      postStart:
+                        exec:
+                          command:
+                            - /bin/sh
+                            - -c
+                            - |
+                              rm -f /usr/local/etc/php-fpm.d/www.conf && \
+                              rm -f /usr/local/etc/php-fpm.d/www.conf.default
                     livenessProbe:
                       exec:
                         command:
