@@ -183,27 +183,16 @@
           spec:
             template:
               spec:
-                initContainers:
-                  - name: init-socket-dir
-                    image: busybox
-                    command: ['sh', '-c', 'mkdir -p /run/php && chown www-data:www-data /run/php && chmod 755 /run/php']
-                    volumeMounts:
-                      - name: socket-dir
-                        mountPath: /run
                 volumes:
                   - name: pool-config
                     configMap:
                       name: chen-php-fpm-pool
-                  - name: socket-dir
-                    emptyDir: {}
                 containers:
                   - name: php-fpm
                     volumeMounts:
                       - name: pool-config
                         mountPath: /usr/local/etc/php-fpm.d/{{ site_name }}.conf
                         subPath: pool.conf
-                      - name: socket-dir
-                        mountPath: /run
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
