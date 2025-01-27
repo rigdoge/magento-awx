@@ -7,15 +7,32 @@
   vars:
     site_name: chen  # 站点名称，可以被外部变量覆盖
     php_fpm_namespace: magento-shared  # PHP-FPM 所在的命名空间
-    k8s_connection:
-      host: "{{ k8s_host }}"
-      api_key: "{{ k8s_api_key }}"
-      validate_certs: "{{ k8s_validate_certs | default(false) }}"
-      ca_cert: "{{ k8s_ca_cert | default(omit) }}"
-      proxy: "{{ k8s_proxy | default(omit) }}"
-      wait_timeout: "{{ k8s_timeout | default(30) }}"
 
   tasks:
+    - name: 创建临时 kubeconfig 文件
+      copy:
+        content: |
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - name: k3s
+            cluster:
+              server: "{{ k8s_host }}"
+              insecure-skip-tls-verify: {{ not (k8s_validate_certs | default(false)) }}
+          users:
+          - name: awx
+            user:
+              token: "{{ k8s_api_key }}"
+          contexts:
+          - name: default
+            context:
+              cluster: k3s
+              user: awx
+          current-context: default
+        dest: /tmp/kubeconfig
+        mode: '0600'
+      register: kubeconfig_result
+
     - name: 显示连接信息
       debug:
         msg: 
@@ -24,17 +41,13 @@
           - "Site Name: {{ site_name }}"
           - "验证证书: {{ k8s_validate_certs | default(false) }}"
           - "API Key: {{ k8s_api_key | truncate(10, True, '...', 0) if k8s_api_key is defined else '未设置' }}"
-          - "等待超时: {{ k8s_connection.wait_timeout }}"
+          - "Kubeconfig: {{ kubeconfig_result.dest }}"
 
     - name: 验证 Kubernetes 连接
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Namespace
-        host: "{{ k8s_connection.host }}"
-        api_key: "{{ k8s_connection.api_key }}"
-        validate_certs: "{{ k8s_connection.validate_certs }}"
-        ca_cert: "{{ k8s_connection.ca_cert }}"
-        proxy: "{{ k8s_connection.proxy }}"
+        kubeconfig: "{{ kubeconfig_result.dest }}"
       register: all_namespaces
       ignore_errors: yes
 
@@ -61,11 +74,7 @@
 
     - name: 创建命名空间
       kubernetes.core.k8s:
-        host: "{{ k8s_connection.host }}"
-        api_key: "{{ k8s_connection.api_key }}"
-        validate_certs: "{{ k8s_connection.validate_certs }}"
-        ca_cert: "{{ k8s_connection.ca_cert }}"
-        proxy: "{{ k8s_connection.proxy }}"
+        kubeconfig: "{{ kubeconfig_result.dest }}"
         state: present
         definition:
           apiVersion: v1
@@ -111,13 +120,7 @@
 
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
-        host: "{{ k8s_connection.host }}"
-        api_key: "{{ k8s_connection.api_key }}"
-        validate_certs: "{{ k8s_connection.validate_certs }}"
-        ca_cert: "{{ k8s_connection.ca_cert }}"
-        proxy: "{{ k8s_connection.proxy }}"
-        wait: yes
-        wait_timeout: "{{ k8s_connection.wait_timeout }}"
+        kubeconfig: "{{ kubeconfig_result.dest }}"
         state: present
         definition:
           apiVersion: v1
@@ -173,13 +176,7 @@
 
     - name: 获取当前 PHP-FPM Deployment
       kubernetes.core.k8s_info:
-        host: "{{ k8s_connection.host }}"
-        api_key: "{{ k8s_connection.api_key }}"
-        validate_certs: "{{ k8s_connection.validate_certs }}"
-        ca_cert: "{{ k8s_connection.ca_cert }}"
-        proxy: "{{ k8s_connection.proxy }}"
-        wait: yes
-        wait_timeout: "{{ k8s_connection.wait_timeout }}"
+        kubeconfig: "{{ kubeconfig_result.dest }}"
         api_version: apps/v1
         kind: Deployment
         name: php-fpm
@@ -198,13 +195,7 @@
 
     - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
       kubernetes.core.k8s:
-        host: "{{ k8s_connection.host }}"
-        api_key: "{{ k8s_connection.api_key }}"
-        validate_certs: "{{ k8s_connection.validate_certs }}"
-        ca_cert: "{{ k8s_connection.ca_cert }}"
-        proxy: "{{ k8s_connection.proxy }}"
-        wait: yes
-        wait_timeout: "{{ k8s_connection.wait_timeout }}"
+        kubeconfig: "{{ kubeconfig_result.dest }}"
         state: present
         definition:
           apiVersion: apps/v1
@@ -246,13 +237,7 @@
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
-        host: "{{ k8s_connection.host }}"
-        api_key: "{{ k8s_connection.api_key }}"
-        validate_certs: "{{ k8s_connection.validate_certs }}"
-        ca_cert: "{{ k8s_connection.ca_cert }}"
-        proxy: "{{ k8s_connection.proxy }}"
-        wait: yes
-        wait_timeout: "{{ k8s_connection.wait_timeout }}"
+        kubeconfig: "{{ kubeconfig_result.dest }}"
         kind: Pod
         namespace: "{{ php_fpm_namespace }}"
         label_selectors:
@@ -268,4 +253,10 @@
 
     - name: 显示 PHP-FPM Pod 状态
       debug:
-        msg: "PHP-FPM Pool {{ site_name }} 配置{{ '失败' if task_failed else '成功' }}" 
+        msg: "PHP-FPM Pool {{ site_name }} 配置{{ '失败' if task_failed else '成功' }}"
+
+    - name: 清理临时 kubeconfig 文件
+      file:
+        path: "{{ kubeconfig_result.dest }}"
+        state: absent
+      ignore_errors: yes 
