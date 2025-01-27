@@ -168,8 +168,20 @@
           metadata:
             name: php-fpm
             namespace: "{{ php_fpm_namespace }}"
+            labels:
+              app: php-fpm
+              role: shared
           spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: php-fpm
+                role: shared
             template:
+              metadata:
+                labels:
+                  app: php-fpm
+                  role: shared
               spec:
                 volumes:
                   - name: pool-config
@@ -177,10 +189,25 @@
                       name: chen-php-fpm-pool
                 containers:
                   - name: php-fpm
+                    image: php:8.3-fpm
                     volumeMounts:
                       - name: pool-config
                         mountPath: /usr/local/etc/php-fpm.d/chen.conf
                         subPath: pool.conf
+                    livenessProbe:
+                      exec:
+                        command:
+                          - php-fpm
+                          - -t
+                      initialDelaySeconds: 5
+                      periodSeconds: 10
+                    readinessProbe:
+                      exec:
+                        command:
+                          - php-fpm
+                          - -t
+                      initialDelaySeconds: 5
+                      periodSeconds: 10
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
