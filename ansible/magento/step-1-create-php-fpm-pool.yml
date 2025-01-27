@@ -16,6 +16,21 @@
           - "Namespace: {{ php_fpm_namespace }}"
           - "Site Name: {{ site_name }}"
 
+    - name: 验证 kubectl 连接
+      shell: |
+        kubectl config view
+        echo "---"
+        kubectl get namespace {{ php_fpm_namespace }}
+      register: kubectl_result
+      ignore_errors: yes
+
+    - name: 显示 kubectl 验证结果
+      debug:
+        msg: 
+          - "状态: {{ kubectl_result.failed | default(false) }}"
+          - "错误: {{ kubectl_result.stderr | default('无') }}"
+          - "输出: {{ kubectl_result.stdout | default('无') }}"
+
     - name: 验证 Kubernetes 连接
       kubernetes.core.k8s_info:
         host: "{{ k8s_host }}"
@@ -33,6 +48,15 @@
           - "错误: {{ namespace_info.module_stderr | default('无') }}"
           - "输出: {{ namespace_info.resources | default([]) }}"
       when: namespace_info is defined
+
+    - name: 设置任务状态
+      set_fact:
+        task_failed: "{{ namespace_info.failed | default(false) }}"
+
+    - name: 如果 Kubernetes 连接失败则退出
+      fail:
+        msg: "Kubernetes 连接失败，请检查认证信息"
+      when: task_failed
 
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
@@ -91,10 +115,6 @@
           - "错误: {{ configmap_result.module_stderr | default('无') }}"
           - "输出: {{ configmap_result.result | default({}) }}"
       when: configmap_result is defined
-
-    - name: 设置任务状态
-      set_fact:
-        task_failed: "{{ configmap_result.failed | default(false) }}"
 
     - name: 获取当前 PHP-FPM Deployment
       kubernetes.core.k8s_info:
