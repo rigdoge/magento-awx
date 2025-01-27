@@ -108,10 +108,10 @@
           apiVersion: v1
           kind: ConfigMap
           metadata:
-            name: "{{ site_name }}-php-fpm-pool"
+            name: chen-php-fpm-pool
             namespace: "{{ php_fpm_namespace }}"
           data:
-            "{{ site_name }}.conf": |
+            pool.conf: |
               [{{ site_name }}]
               user = www-data
               group = www-data
@@ -166,33 +166,32 @@
           - "资源: {{ current_deployment.resources | default([]) }}"
       when: current_deployment is defined
 
-    # 暂时注释掉更新 Deployment 的部分
-    # - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
-    #   kubernetes.core.k8s:
-    #     host: "{{ k8s_auth.host }}"
-    #     api_key: "{{ k8s_auth.api_key }}"
-    #     validate_certs: "{{ k8s_auth.validate_certs }}"
-    #     state: present
-    #     merge_type: strategic-merge
-    #     definition:
-    #       apiVersion: apps/v1
-    #       kind: Deployment
-    #       metadata:
-    #         name: php-fpm
-    #         namespace: "{{ php_fpm_namespace }}"
-    #       spec:
-    #         template:
-    #           spec:
-    #             volumes:
-    #               - name: "{{ site_name }}-pool-config"
-    #                 configMap:
-    #                   name: "{{ site_name }}-php-fpm-pool"
-    #             containers:
-    #               - name: php-fpm
-    #                 volumeMounts:
-    #                   - name: "{{ site_name }}-pool-config"
-    #                     mountPath: "/usr/local/etc/php-fpm.d/{{ site_name }}.conf"
-    #                     subPath: "{{ site_name }}.conf"
+    - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
+      kubernetes.core.k8s:
+        host: "{{ k8s_auth.host }}"
+        api_key: "{{ k8s_auth.api_key }}"
+        validate_certs: "{{ k8s_auth.validate_certs }}"
+        state: present
+        merge_type: strategic-merge
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: php-fpm
+            namespace: "{{ php_fpm_namespace }}"
+          spec:
+            template:
+              spec:
+                volumes:
+                  - name: pool-config
+                    configMap:
+                      name: chen-php-fpm-pool
+                containers:
+                  - name: php-fpm
+                    volumeMounts:
+                      - name: pool-config
+                        mountPath: /usr/local/etc/php-fpm.d/{{ site_name }}.conf
+                        subPath: pool.conf
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
