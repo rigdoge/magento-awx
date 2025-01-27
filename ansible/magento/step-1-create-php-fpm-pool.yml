@@ -112,8 +112,6 @@
           data:
             pool.conf: |
               [{{ site_name }}]
-              user = www-data
-              group = www-data
               listen = /run/php/php8.3-fpm.sock
               listen.owner = www-data
               listen.group = www-data
@@ -183,6 +181,8 @@
                   app: php-fpm
                   role: shared
               spec:
+                securityContext:
+                  fsGroup: 33
                 volumes:
                   - name: pool-config
                     configMap:
@@ -202,6 +202,7 @@
                     securityContext:
                       runAsUser: 33  # www-data 的 UID
                       runAsGroup: 33  # www-data 的 GID
+                      allowPrivilegeEscalation: false
                     volumeMounts:
                       - name: pool-config
                         mountPath: /usr/local/etc/php-fpm.d/chen.conf
