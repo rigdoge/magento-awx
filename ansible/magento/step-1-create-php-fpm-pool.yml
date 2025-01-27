@@ -115,7 +115,7 @@
               [{{ site_name }}]
               user = www-data
               group = www-data
-              listen = /var/run/php-fpm.sock
+              listen = /run/php/php8.3-fpm.sock
               listen.owner = www-data
               listen.group = www-data
               listen.mode = 0660
@@ -183,16 +183,26 @@
           spec:
             template:
               spec:
+                initContainers:
+                  - name: init-socket-dir
+                    image: busybox
+                    command: ['sh', '-c', 'mkdir -p /run/php && chown www-data:www-data /run/php && chmod 755 /run/php']
+                    volumeMounts:
+                      - name: socket-dir
+                        mountPath: /run/php
                 volumes:
                   - name: pool-config
                     configMap:
                       name: chen-php-fpm-pool
+                  - name: socket-dir
+                    emptyDir: {}
                 containers:
                   - name: php-fpm
                     volumeMounts:
                       - name: pool-config
                         mountPath: /usr/local/etc/php-fpm.d/{{ site_name }}.conf
                         subPath: pool.conf
+                      - name: socket-dir
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
