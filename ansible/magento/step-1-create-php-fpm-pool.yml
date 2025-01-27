@@ -16,20 +16,28 @@
           - "Namespace: {{ php_fpm_namespace }}"
           - "Site Name: {{ site_name }}"
 
-    - name: 验证 kubectl 连接
-      shell: |
-        kubectl config view
-        echo "---"
-        kubectl get namespace {{ php_fpm_namespace }}
-      register: kubectl_result
-      ignore_errors: yes
-
-    - name: 显示 kubectl 验证结果
-      debug:
-        msg: 
-          - "状态: {{ kubectl_result.failed | default(false) }}"
-          - "错误: {{ kubectl_result.stderr | default('无') }}"
-          - "输出: {{ kubectl_result.stdout | default('无') }}"
+    - name: 创建临时 kubeconfig
+      copy:
+        dest: "/tmp/kubeconfig"
+        content: |
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - name: k3s
+            cluster:
+              server: "{{ k8s_host }}"
+              insecure-skip-tls-verify: true
+          users:
+          - name: awx
+            user:
+              token: "{{ k8s_api_key }}"
+          contexts:
+          - name: k3s
+            context:
+              cluster: k3s
+              user: awx
+          current-context: k3s
+      register: kubeconfig_result
 
     - name: 验证 Kubernetes 连接
       kubernetes.core.k8s_info:
@@ -38,6 +46,7 @@
         validate_certs: "{{ k8s_validate_certs | default(false) }}"
         kind: Namespace
         name: "{{ php_fpm_namespace }}"
+        kubeconfig: "/tmp/kubeconfig"
       register: namespace_info
       ignore_errors: yes
 
@@ -55,7 +64,14 @@
 
     - name: 如果 Kubernetes 连接失败则退出
       fail:
-        msg: "Kubernetes 连接失败，请检查认证信息"
+        msg: |
+          Kubernetes 连接失败，请检查以下信息：
+          1. API 服务器地址: {{ k8s_host }}
+          2. Token 是否有效
+          3. 命名空间 {{ php_fpm_namespace }} 是否存在
+          4. 网络连接是否正常
+          
+          错误信息：{{ namespace_info.module_stderr | default('无') }}
       when: task_failed
 
     - name: 创建 PHP-FPM Pool ConfigMap
