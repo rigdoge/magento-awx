@@ -17,8 +17,8 @@
           clusters:
           - name: k3s
             cluster:
-              server: "{{ k8s_host }}"
-              insecure-skip-tls-verify: {{ not (k8s_validate_certs | default(false)) }}
+              server: "https://10.43.0.1:443"
+              insecure-skip-tls-verify: true
           users:
           - name: awx
             user:
@@ -36,12 +36,18 @@
     - name: 显示连接信息
       debug:
         msg: 
-          - "Host: {{ k8s_host }}"
+          - "Host: https://10.43.0.1:443"
           - "Namespace: {{ php_fpm_namespace }}"
           - "Site Name: {{ site_name }}"
-          - "验证证书: {{ k8s_validate_certs | default(false) }}"
+          - "验证证书: false"
           - "API Key: {{ k8s_api_key | truncate(10, True, '...', 0) if k8s_api_key is defined else '未设置' }}"
           - "Kubeconfig: {{ kubeconfig_result.dest }}"
+
+    - name: 显示 kubeconfig 内容
+      debug:
+        msg: |
+          {{ lookup('file', kubeconfig_result.dest) | regex_replace(k8s_api_key, '***') }}
+      when: kubeconfig_result is defined
 
     - name: 验证 Kubernetes 连接
       kubernetes.core.k8s_info:
@@ -103,11 +109,11 @@
       fail:
         msg: |
           Kubernetes 连接失败，请检查以下信息：
-          1. API 服务器地址: {{ k8s_host }}
+          1. API 服务器地址: https://10.43.0.1:443
           2. Token 是否有效: {{ k8s_api_key | truncate(10, True, '...', 0) if k8s_api_key is defined else '未设置' }}
           3. 命名空间 {{ php_fpm_namespace }} {{ '存在' if (namespace_exists | default(false)) else '不存在' }}
           4. 网络连接是否正常
-          5. 证书验证设置: {{ k8s_validate_certs | default(false) }}
+          5. 证书验证设置: false
           
           错误信息：{{ all_namespaces.msg | default('无') }}
           错误详情：{{ all_namespaces.module_stderr | default('无') }}
