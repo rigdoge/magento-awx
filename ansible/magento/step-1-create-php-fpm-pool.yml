@@ -189,7 +189,7 @@
                     command: ['sh', '-c', 'mkdir -p /run/php && chown www-data:www-data /run/php && chmod 755 /run/php']
                     volumeMounts:
                       - name: socket-dir
-                        mountPath: /run/php
+                        mountPath: /run
                 volumes:
                   - name: pool-config
                     configMap:
@@ -203,6 +203,7 @@
                         mountPath: /usr/local/etc/php-fpm.d/{{ site_name }}.conf
                         subPath: pool.conf
                       - name: socket-dir
+                        mountPath: /run
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
