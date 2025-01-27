@@ -187,6 +187,8 @@
                   - name: pool-config
                     configMap:
                       name: chen-php-fpm-pool
+                  - name: run-php
+                    emptyDir: {}
                 containers:
                   - name: php-fpm
                     image: php:8.3-fpm
@@ -194,19 +196,33 @@
                       - name: pool-config
                         mountPath: /usr/local/etc/php-fpm.d/chen.conf
                         subPath: pool.conf
+                      - name: run-php
+                        mountPath: /run/php
+                    lifecycle:
+                      postStart:
+                        exec:
+                          command:
+                            - /bin/sh
+                            - -c
+                            - |
+                              mkdir -p /run/php && \
+                              chown www-data:www-data /run/php && \
+                              chmod 755 /run/php
                     livenessProbe:
                       exec:
                         command:
-                          - php-fpm
-                          - -t
-                      initialDelaySeconds: 5
+                          - /bin/sh
+                          - -c
+                          - test -S /run/php/php8.3-fpm.sock
+                      initialDelaySeconds: 10
                       periodSeconds: 10
                     readinessProbe:
                       exec:
                         command:
-                          - php-fpm
-                          - -t
-                      initialDelaySeconds: 5
+                          - /bin/sh
+                          - -c
+                          - test -S /run/php/php8.3-fpm.sock
+                      initialDelaySeconds: 10
                       periodSeconds: 10
 
     - name: 等待 PHP-FPM Pod 重启
