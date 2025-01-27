@@ -30,26 +30,37 @@
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Namespace
-        name: "{{ php_fpm_namespace }}"
         host: "{{ k8s_connection.host }}"
         api_key: "{{ k8s_connection.api_key }}"
         validate_certs: "{{ k8s_connection.validate_certs }}"
         ca_cert: "{{ k8s_connection.ca_cert }}"
         proxy: "{{ k8s_connection.proxy }}"
-      register: namespace_info
+      register: all_namespaces
       ignore_errors: yes
 
-    - name: 显示命名空间信息
+    - name: 显示所有命名空间
       debug:
         msg: 
-          - "状态: {{ namespace_info.failed | default(false) }}"
-          - "错误: {{ namespace_info.msg | default('无') }}"
-          - "资源: {{ namespace_info.resources | default([]) | to_nice_json }}"
-      when: namespace_info is defined
+          - "状态: {{ all_namespaces.failed | default(false) }}"
+          - "错误: {{ all_namespaces.msg | default('无') }}"
+          - "命名空间列表: {{ all_namespaces.resources | map(attribute='metadata.name') | list | default([]) }}"
+      when: all_namespaces is defined
+
+    - name: 验证目标命名空间是否存在
+      set_fact:
+        namespace_exists: "{{ php_fpm_namespace in (all_namespaces.resources | map(attribute='metadata.name') | list) }}"
+      when: not all_namespaces.failed | default(false)
+
+    - name: 显示命名空间验证结果
+      debug:
+        msg: 
+          - "命名空间 {{ php_fpm_namespace }} {{ '存在' if namespace_exists | default(false) else '不存在' }}"
+          - "连接状态: {{ not all_namespaces.failed }}"
+      when: all_namespaces is defined
 
     - name: 设置任务状态
       set_fact:
-        task_failed: "{{ namespace_info.failed | default(false) or namespace_info.resources | length == 0 }}"
+        task_failed: "{{ all_namespaces.failed | default(false) or not namespace_exists | default(false) }}"
 
     - name: 如果 Kubernetes 连接失败则退出
       fail:
@@ -57,13 +68,13 @@
           Kubernetes 连接失败，请检查以下信息：
           1. API 服务器地址: {{ k8s_host }}
           2. Token 是否有效: {{ k8s_api_key | truncate(10, True, '...', 0) if k8s_api_key is defined else '未设置' }}
-          3. 命名空间 {{ php_fpm_namespace }} 是否存在
+          3. 命名空间 {{ php_fpm_namespace }} {{ '存在' if namespace_exists | default(false) else '不存在' }}
           4. 网络连接是否正常
           5. 证书验证设置: {{ k8s_validate_certs | default(false) }}
           
-          错误信息：{{ namespace_info.msg | default('无') }}
-          资源信息：{{ namespace_info.resources | default([]) | to_nice_json }}
-          详细信息：{{ namespace_info | to_nice_json }}
+          错误信息：{{ all_namespaces.msg | default('无') }}
+          可用命名空间：{{ all_namespaces.resources | map(attribute='metadata.name') | list | default([]) | to_nice_json }}
+          详细信息：{{ all_namespaces | to_nice_json }}
       when: task_failed
 
     - name: 创建 PHP-FPM Pool ConfigMap
