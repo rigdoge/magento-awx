@@ -198,13 +198,13 @@
                       - /bin/sh
                       - -c
                       - |
-                        rm -f /etc/php-fpm.d/www.conf /etc/php-fpm.d/www.conf.default
+                        rm -f /usr/local/etc/php-fpm.d/www.conf /usr/local/etc/php-fpm.d/www.conf.default
                         mkdir -p /run/php
                         chown 33:33 /run/php
                         chmod 755 /run/php
                     volumeMounts:
                       - name: php-fpm-config
-                        mountPath: /etc/php-fpm.d
+                        mountPath: /usr/local/etc/php-fpm.d
                       - name: run-php
                         mountPath: /run/php
                 containers:
