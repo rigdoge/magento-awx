@@ -189,6 +189,24 @@
                       name: chen-php-fpm-pool
                   - name: run-php
                     emptyDir: {}
+                  - name: php-fpm-config
+                    emptyDir: {}
+                initContainers:
+                  - name: init-php-fpm
+                    image: busybox
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        rm -f /etc/php-fpm.d/www.conf /etc/php-fpm.d/www.conf.default
+                        mkdir -p /run/php
+                        chown 33:33 /run/php
+                        chmod 755 /run/php
+                    volumeMounts:
+                      - name: php-fpm-config
+                        mountPath: /etc/php-fpm.d
+                      - name: run-php
+                        mountPath: /run/php
                 containers:
                   - name: php-fpm
                     image: docker.io/library/php:8.3-fpm
@@ -207,33 +225,10 @@
                       - name: pool-config
                         mountPath: /usr/local/etc/php-fpm.d/chen.conf
                         subPath: pool.conf
+                      - name: php-fpm-config
+                        mountPath: /usr/local/etc/php-fpm.d
                       - name: run-php
                         mountPath: /run/php
-                    lifecycle:
-                      postStart:
-                        exec:
-                          command:
-                            - /bin/sh
-                            - -c
-                            - |
-                              rm -f /usr/local/etc/php-fpm.d/www.conf && \
-                              rm -f /usr/local/etc/php-fpm.d/www.conf.default
-                    livenessProbe:
-                      exec:
-                        command:
-                          - /bin/sh
-                          - -c
-                          - test -S /run/php/php8.3-fpm.sock
-                      initialDelaySeconds: 10
-                      periodSeconds: 10
-                    readinessProbe:
-                      exec:
-                        command:
-                          - /bin/sh
-                          - -c
-                          - test -S /run/php/php8.3-fpm.sock
-                      initialDelaySeconds: 10
-                      periodSeconds: 10
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
