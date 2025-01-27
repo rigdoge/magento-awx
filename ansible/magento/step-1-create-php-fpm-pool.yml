@@ -10,9 +10,6 @@
   tasks:
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
-        host: "{{ k8s_host }}"
-        api_key: "{{ k8s_api_key }}"
-        validate_certs: "{{ k8s_validate_certs | default(false) }}"
         state: present
         definition:
           apiVersion: v1
@@ -58,9 +55,6 @@
 
     - name: 获取当前 PHP-FPM Deployment
       kubernetes.core.k8s_info:
-        host: "{{ k8s_host }}"
-        api_key: "{{ k8s_api_key }}"
-        validate_certs: "{{ k8s_validate_certs | default(false) }}"
         api_version: apps/v1
         kind: Deployment
         name: php-fpm
@@ -69,9 +63,6 @@
 
     - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
       kubernetes.core.k8s:
-        host: "{{ k8s_host }}"
-        api_key: "{{ k8s_api_key }}"
-        validate_certs: "{{ k8s_validate_certs | default(false) }}"
         state: present
         definition:
           apiVersion: apps/v1
@@ -98,9 +89,6 @@
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
-        host: "{{ k8s_host }}"
-        api_key: "{{ k8s_api_key }}"
-        validate_certs: "{{ k8s_validate_certs | default(false) }}"
         kind: Pod
         namespace: "{{ php_fpm_namespace }}"
         label_selectors:
