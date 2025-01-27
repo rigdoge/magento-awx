@@ -216,6 +216,8 @@
                             - /bin/sh
                             - -c
                             - |
+                              rm -f /usr/local/etc/php-fpm.d/www.conf && \
+                              rm -f /usr/local/etc/php-fpm.d/www.conf.default && \
                               mkdir -p /run/php && \
                               chown www-data:www-data /run/php && \
                               chmod 755 /run/php
