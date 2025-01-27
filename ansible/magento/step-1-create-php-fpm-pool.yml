@@ -5,33 +5,29 @@
   collections:
     - kubernetes.core
   vars:
-    site_name: chen  # 站点名称，可以被外部变量覆盖
-    php_fpm_namespace: magento-shared  # PHP-FPM 所在的命名空间
-
-  environment:
-    K8S_AUTH_HOST: "{{ k8s_host | default('https://kubernetes.default.svc') }}"
-    K8S_AUTH_API_KEY: "{{ k8s_api_key }}"
-    K8S_AUTH_VERIFY_SSL: "{{ k8s_validate_certs | default('false') }}"
+    site_name: "{{ site_name | default('chen') }}"  # 站点名称，可以被外部变量覆盖
+    php_fpm_namespace: "{{ namespace | default('magento-shared') }}"  # PHP-FPM 所在的命名空间，可以被外部变量覆盖
+    k8s_auth:
+      host: "{{ k8s_host | default('https://kubernetes.default.svc') }}"
+      api_key: "{{ k8s_api_key }}"  # 直接使用 AWX 凭证中的 token
+      validate_certs: "{{ k8s_validate_certs | default(false) }}"
 
   tasks:
-    - name: 获取 Service Account Token
-      slurp:
-        src: /var/run/secrets/kubernetes.io/serviceaccount/token
-      register: token_result
-      ignore_errors: yes
-
     - name: 显示连接信息
       debug:
         msg: 
-          - "Host: {{ lookup('env', 'K8S_AUTH_HOST') }}"
+          - "Host: {{ k8s_auth.host }}"
           - "Namespace: {{ php_fpm_namespace }}"
           - "Site Name: {{ site_name }}"
-          - "验证证书: {{ lookup('env', 'K8S_AUTH_VERIFY_SSL') }}"
+          - "验证证书: {{ k8s_auth.validate_certs }}"
 
     - name: 验证 Kubernetes 连接
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Namespace
+        host: "{{ k8s_auth.host }}"
+        api_key: "{{ k8s_auth.api_key }}"
+        validate_certs: "{{ k8s_auth.validate_certs }}"
       register: all_namespaces
       ignore_errors: yes
 
@@ -86,11 +82,11 @@
       fail:
         msg: |
           Kubernetes 连接失败，请检查以下信息：
-          1. API 服务器地址: {{ lookup('env', 'K8S_AUTH_HOST') }}
-          2. Token 是否有效: /var/run/secrets/kubernetes.io/serviceaccount/token
+          1. API 服务器地址: {{ k8s_auth.host }}
+          2. Token 是否有效: {{ k8s_auth.api_key }}
           3. 命名空间 {{ php_fpm_namespace }} {{ '存在' if (namespace_exists | default(false)) else '不存在' }}
           4. 网络连接是否正常
-          5. 证书验证设置: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          5. 证书验证设置: {{ k8s_auth.validate_certs }}
           
           错误信息：{{ all_namespaces.msg | default('无') }}
           错误详情：{{ all_namespaces.module_stderr | default('无') }}
@@ -162,6 +158,9 @@
         kind: Deployment
         name: php-fpm
         namespace: "{{ php_fpm_namespace }}"
+        host: "{{ k8s_auth.host }}"
+        api_key: "{{ k8s_auth.api_key }}"
+        validate_certs: "{{ k8s_auth.validate_certs }}"
       register: current_deployment
       when: not task_failed
       ignore_errors: yes
@@ -223,6 +222,9 @@
           - app=php-fpm
         field_selectors:
           - status.phase=Running
+        host: "{{ k8s_auth.host }}"
+        api_key: "{{ k8s_auth.api_key }}"
+        validate_certs: "{{ k8s_auth.validate_certs }}"
       register: php_fpm_pod
       until: php_fpm_pod.resources | length > 0
       retries: 30
