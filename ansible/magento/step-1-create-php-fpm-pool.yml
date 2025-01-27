@@ -7,9 +7,30 @@
   vars:
     site_name: chen  # 站点名称，可以被外部变量覆盖
     php_fpm_namespace: magento-shared  # PHP-FPM 所在的命名空间
+
   tasks:
+    - name: 显示连接信息
+      debug:
+        msg: 
+          - "Host: {{ k8s_host }}"
+          - "Namespace: {{ php_fpm_namespace }}"
+          - "Site Name: {{ site_name }}"
+
+    - name: 验证 Kubernetes 连接
+      kubernetes.core.k8s_info:
+        kind: Namespace
+        name: "{{ php_fpm_namespace }}"
+      register: namespace_info
+
+    - name: 显示命名空间信息
+      debug:
+        var: namespace_info
+
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
+        host: "{{ k8s_host }}"
+        api_key: "{{ k8s_api_key }}"
+        validate_certs: "{{ k8s_validate_certs | default(false) }}"
         state: present
         definition:
           apiVersion: v1
@@ -52,6 +73,18 @@
               php_value[upload_max_filesize] = 64M
               php_value[realpath_cache_size] = 10M
               php_value[realpath_cache_ttl] = 7200
+      register: configmap_result
+      ignore_errors: yes
+
+    - name: 显示 ConfigMap 创建结果
+      debug:
+        var: configmap_result
+      when: configmap_result is defined
+
+    - name: 如果失败则显示错误信息
+      debug:
+        msg: "创建 ConfigMap 失败: {{ configmap_result.msg if configmap_result.msg is defined else 'Unknown error' }}"
+      when: configmap_result is failed
 
     - name: 获取当前 PHP-FPM Deployment
       kubernetes.core.k8s_info:
@@ -60,9 +93,13 @@
         name: php-fpm
         namespace: "{{ php_fpm_namespace }}"
       register: current_deployment
+      when: configmap_result is succeeded
 
     - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
       kubernetes.core.k8s:
+        host: "{{ k8s_host }}"
+        api_key: "{{ k8s_api_key }}"
+        validate_certs: "{{ k8s_validate_certs | default(false) }}"
         state: present
         definition:
           apiVersion: apps/v1
@@ -86,6 +123,13 @@
                 - name: "{{ site_name }}-pool-config"
                   configMap:
                     name: "{{ site_name }}-php-fpm-pool"
+      when: current_deployment is succeeded
+      register: deployment_result
+
+    - name: 显示 Deployment 更新结果
+      debug:
+        var: deployment_result
+      when: deployment_result is defined
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
@@ -99,7 +143,9 @@
       until: php_fpm_pod.resources | length > 0
       retries: 30
       delay: 10
+      when: deployment_result is succeeded
 
     - name: 显示 PHP-FPM Pod 状态
       debug:
-        msg: "PHP-FPM Pool {{ site_name }} 已创建并配置" 
+        msg: "PHP-FPM Pool {{ site_name }} 已创建并配置"
+      when: php_fpm_pod is succeeded 
