@@ -28,13 +28,11 @@
 
     - name: 显示命名空间信息
       debug:
-        var: namespace_info
+        msg: 
+          - "状态: {{ namespace_info.failed | default(false) }}"
+          - "错误: {{ namespace_info.module_stderr | default('无') }}"
+          - "输出: {{ namespace_info.resources | default([]) }}"
       when: namespace_info is defined
-
-    - name: 如果命名空间验证失败则显示错误
-      debug:
-        msg: "命名空间验证失败: {{ namespace_info }}"
-      when: namespace_info is failed
 
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
@@ -88,13 +86,15 @@
 
     - name: 显示 ConfigMap 创建结果
       debug:
-        var: configmap_result
+        msg: 
+          - "状态: {{ configmap_result.failed | default(false) }}"
+          - "错误: {{ configmap_result.module_stderr | default('无') }}"
+          - "输出: {{ configmap_result.result | default({}) }}"
       when: configmap_result is defined
 
-    - name: 如果失败则显示错误信息
-      debug:
-        msg: "创建 ConfigMap 失败: {{ configmap_result }}"
-      when: configmap_result is failed
+    - name: 设置任务状态
+      set_fact:
+        task_failed: "{{ configmap_result.failed | default(false) }}"
 
     - name: 获取当前 PHP-FPM Deployment
       kubernetes.core.k8s_info:
@@ -106,12 +106,15 @@
         name: php-fpm
         namespace: "{{ php_fpm_namespace }}"
       register: current_deployment
-      when: not configmap_result.failed | default(true)
+      when: not task_failed
       ignore_errors: yes
 
     - name: 显示当前 Deployment 信息
       debug:
-        var: current_deployment
+        msg: 
+          - "状态: {{ current_deployment.failed | default(false) }}"
+          - "错误: {{ current_deployment.module_stderr | default('无') }}"
+          - "资源: {{ current_deployment.resources | default([]) }}"
       when: current_deployment is defined
 
     - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
@@ -146,13 +149,16 @@
                 - name: "{{ site_name }}-pool-config"
                   configMap:
                     name: "{{ site_name }}-php-fpm-pool"
-      when: not configmap_result.failed | default(true)
+      when: not task_failed
       register: deployment_result
       ignore_errors: yes
 
     - name: 显示 Deployment 更新结果
       debug:
-        var: deployment_result
+        msg: 
+          - "状态: {{ deployment_result.failed | default(false) }}"
+          - "错误: {{ deployment_result.module_stderr | default('无') }}"
+          - "输出: {{ deployment_result.result | default({}) }}"
       when: deployment_result is defined
 
     - name: 等待 PHP-FPM Pod 重启
@@ -170,10 +176,9 @@
       until: php_fpm_pod.resources | length > 0
       retries: 30
       delay: 10
-      when: not deployment_result.failed | default(true)
+      when: not task_failed and not deployment_result.failed | default(false)
       ignore_errors: yes
 
     - name: 显示 PHP-FPM Pod 状态
       debug:
-        msg: "PHP-FPM Pool {{ site_name }} 已创建并配置"
-      when: php_fpm_pod is succeeded 
+        msg: "PHP-FPM Pool {{ site_name }} 配置{{ '失败' if task_failed else '成功' }}" 
