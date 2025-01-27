@@ -9,29 +9,11 @@
     php_fpm_namespace: magento-shared  # PHP-FPM 所在的命名空间
 
   tasks:
-    - name: 创建临时 kubeconfig 文件
-      copy:
-        content: |
-          apiVersion: v1
-          kind: Config
-          clusters:
-          - name: k3s
-            cluster:
-              server: https://kubernetes.default.svc
-              certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-          users:
-          - name: awx
-            user:
-              tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-          contexts:
-          - name: default
-            context:
-              cluster: k3s
-              user: awx
-          current-context: default
-        dest: /tmp/kubeconfig
-        mode: '0600'
-      register: kubeconfig_result
+    - name: 获取 Service Account Token
+      slurp:
+        src: /var/run/secrets/kubernetes.io/serviceaccount/token
+      register: token_result
+      ignore_errors: yes
 
     - name: 显示连接信息
       debug:
@@ -39,21 +21,16 @@
           - "Host: https://kubernetes.default.svc"
           - "Namespace: {{ php_fpm_namespace }}"
           - "Site Name: {{ site_name }}"
-          - "证书: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-          - "Token: /var/run/secrets/kubernetes.io/serviceaccount/token"
-          - "Kubeconfig: {{ kubeconfig_result.dest }}"
-
-    - name: 显示 kubeconfig 内容
-      debug:
-        msg: |
-          {{ lookup('file', kubeconfig_result.dest) | regex_replace(k8s_api_key, '***') }}
-      when: kubeconfig_result is defined
+          - "Token 路径: /var/run/secrets/kubernetes.io/serviceaccount/token"
+          - "Token 状态: {{ 'OK' if not token_result.failed else '无法读取' }}"
 
     - name: 验证 Kubernetes 连接
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Namespace
-        kubeconfig: "{{ kubeconfig_result.dest }}"
+        host: https://kubernetes.default.svc
+        api_key: "{{ (token_result.content | b64decode) if not token_result.failed else '' }}"
+        validate_certs: no
       register: all_namespaces
       ignore_errors: yes
 
@@ -80,7 +57,9 @@
 
     - name: 创建命名空间
       kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig_result.dest }}"
+        host: https://kubernetes.default.svc
+        api_key: "{{ (token_result.content | b64decode) if not token_result.failed else '' }}"
+        validate_certs: no
         state: present
         definition:
           apiVersion: v1
@@ -126,7 +105,9 @@
 
     - name: 创建 PHP-FPM Pool ConfigMap
       kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig_result.dest }}"
+        host: https://kubernetes.default.svc
+        api_key: "{{ (token_result.content | b64decode) if not token_result.failed else '' }}"
+        validate_certs: no
         state: present
         definition:
           apiVersion: v1
@@ -182,7 +163,9 @@
 
     - name: 获取当前 PHP-FPM Deployment
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_result.dest }}"
+        host: https://kubernetes.default.svc
+        api_key: "{{ (token_result.content | b64decode) if not token_result.failed else '' }}"
+        validate_certs: no
         api_version: apps/v1
         kind: Deployment
         name: php-fpm
@@ -201,7 +184,9 @@
 
     - name: 更新 PHP-FPM Deployment 以挂载新的 Pool 配置
       kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig_result.dest }}"
+        host: https://kubernetes.default.svc
+        api_key: "{{ (token_result.content | b64decode) if not token_result.failed else '' }}"
+        validate_certs: no
         state: present
         definition:
           apiVersion: apps/v1
@@ -243,7 +228,9 @@
 
     - name: 等待 PHP-FPM Pod 重启
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_result.dest }}"
+        host: https://kubernetes.default.svc
+        api_key: "{{ (token_result.content | b64decode) if not token_result.failed else '' }}"
+        validate_certs: no
         kind: Pod
         namespace: "{{ php_fpm_namespace }}"
         label_selectors:
@@ -261,8 +248,10 @@
       debug:
         msg: "PHP-FPM Pool {{ site_name }} 配置{{ '失败' if task_failed else '成功' }}"
 
-    - name: 清理临时 kubeconfig 文件
+    - name: 清理临时文件
       file:
-        path: "{{ kubeconfig_result.dest }}"
+        path: "{{ item }}"
         state: absent
+      with_items:
+        - /tmp/token
       ignore_errors: yes 
