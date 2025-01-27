@@ -28,7 +28,6 @@
         host: "{{ k8s_auth.host }}"
         api_key: "{{ k8s_auth.api_key }}"
         validate_certs: "{{ k8s_auth.validate_certs }}"
-        name: "{{ php_fpm_namespace }}"
       register: namespace_info
       ignore_errors: true
 
