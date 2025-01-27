@@ -27,7 +27,7 @@
           - "等待超时: {{ k8s_connection.wait_timeout }}"
 
     - name: 验证 Kubernetes 连接
-      kubernetes.core.k8s:
+      kubernetes.core.k8s_info:
         api_version: v1
         kind: Namespace
         name: "{{ php_fpm_namespace }}"
@@ -36,9 +36,6 @@
         validate_certs: "{{ k8s_connection.validate_certs }}"
         ca_cert: "{{ k8s_connection.ca_cert }}"
         proxy: "{{ k8s_connection.proxy }}"
-        wait: yes
-        wait_timeout: "{{ k8s_connection.wait_timeout }}"
-        state: present
       register: namespace_info
       ignore_errors: yes
 
@@ -47,12 +44,12 @@
         msg: 
           - "状态: {{ namespace_info.failed | default(false) }}"
           - "错误: {{ namespace_info.msg | default('无') }}"
-          - "输出: {{ namespace_info.result | default({}) | to_nice_json }}"
+          - "资源: {{ namespace_info.resources | default([]) | to_nice_json }}"
       when: namespace_info is defined
 
     - name: 设置任务状态
       set_fact:
-        task_failed: "{{ namespace_info.failed | default(false) }}"
+        task_failed: "{{ namespace_info.failed | default(false) or namespace_info.resources | length == 0 }}"
 
     - name: 如果 Kubernetes 连接失败则退出
       fail:
@@ -65,6 +62,7 @@
           5. 证书验证设置: {{ k8s_validate_certs | default(false) }}
           
           错误信息：{{ namespace_info.msg | default('无') }}
+          资源信息：{{ namespace_info.resources | default([]) | to_nice_json }}
           详细信息：{{ namespace_info | to_nice_json }}
       when: task_failed
 
