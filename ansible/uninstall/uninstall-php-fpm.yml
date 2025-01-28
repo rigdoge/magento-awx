@@ -10,6 +10,47 @@
       debug:
         msg: "准备从命名空间 {{ use_namespace }} 卸载 PHP-FPM"
 
+    - name: 清理 PHP 包
+      shell: |
+        set -x
+        echo "=== 清理 PHP 包 ==="
+        
+        # 获取 Pod 名称
+        POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}' || true)
+        
+        if [ ! -z "$POD_NAME" ]; then
+          echo "清理 PHP 包..."
+          kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c '
+            # 停止 PHP-FPM 服务
+            service php8.3-fpm stop || true
+            systemctl stop php8.3-fpm || true
+            
+            # 卸载所有 PHP 8.3 包
+            apt-get remove -y php8.3-* || true
+            apt-get purge -y php8.3-* || true
+            apt-get autoremove -y || true
+            
+            # 清理配置文件
+            rm -rf /etc/php/8.3 || true
+            rm -rf /var/lib/php/modules/8.3 || true
+            rm -rf /var/lib/php/sessions || true
+            
+            # 清理 PHP 仓库
+            rm -f /etc/apt/sources.list.d/php.list || true
+            rm -f /etc/apt/trusted.gpg.d/php.gpg || true
+            
+            # 更新包列表
+            apt-get update -y || true
+          '
+        else
+          echo "未找到 PHP-FPM Pod，跳过包清理"
+        fi
+      register: cleanup_php_result
+
+    - name: 显示包清理结果
+      debug:
+        msg: "{{ cleanup_php_result.stdout_lines }}"
+
     - name: 强制删除 PHP-FPM Pod
       shell: |
         set -x
