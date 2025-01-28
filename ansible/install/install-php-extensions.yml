@@ -14,21 +14,19 @@
         set -e  # 遇到错误就退出
         
         for i in $(seq 1 {{ max_retries }}); do
-          echo "尝试获取 Pod 名称... 第 $i 次"
           POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}' || true)
           
           if [ ! -z "$POD_NAME" ]; then
-            echo "找到 Pod: $POD_NAME"
-            echo "$POD_NAME"
+            # 只输出 Pod 名称
+            printf "%s" "$POD_NAME"
             exit 0
           fi
           
           if [ $i -eq {{ max_retries }} ]; then
-            echo "未找到 PHP-FPM Pod"
+            echo "未找到 PHP-FPM Pod" >&2
             exit 1
           fi
           
-          echo "未找到 Pod，等待下一次尝试..."
           sleep {{ init_delay }}
         done
       register: pod_name
@@ -39,37 +37,31 @@
         set -e  # 遇到错误就退出
         
         POD_NAME="{{ pod_name.stdout }}"
-        echo "检查 Pod $POD_NAME 状态..."
         
         for i in $(seq 1 {{ max_retries }}); do
-          echo "检查 Pod 状态... 第 $i 次"
-          
-          # 显示 Pod 详细信息
-          echo "Pod 详细信息:"
-          kubectl describe pod -n {{ use_namespace }} $POD_NAME
-          
           # 检查 Pod 状态
-          STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
+          STATUS=$(kubectl get pod -n {{ use_namespace }} "$POD_NAME" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
           echo "Pod 状态: $STATUS"
           
           if [ "$STATUS" = "Running" ]; then
             echo "Pod 运行正常"
+            kubectl describe pod -n {{ use_namespace }} "$POD_NAME"
             exit 0
           fi
           
           if [ $i -eq {{ max_retries }} ]; then
             echo "Pod 未处于运行状态"
+            kubectl describe pod -n {{ use_namespace }} "$POD_NAME"
             exit 1
           fi
           
           echo "Pod 未就绪，等待下一次检查..."
           sleep {{ init_delay }}
         done
-      register: pod_status
 
     - name: 显示 Pod 状态
       debug:
-        msg: "{{ pod_status.stdout_lines }}"
+        msg: "{{ pod_name.stdout }}"
 
     - name: 更新包管理器
       shell: |
