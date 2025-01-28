@@ -16,7 +16,7 @@
     - name: 创建 Service Account 和 RBAC
       kubernetes.core.k8s:
         state: present
-        src: k8s/awx-service-account.yml
+        src: k8s/awx-rbac.yml
         validate_certs: "{{ k8s_validate_certs | default(false) }}"
       ignore_errors: yes
 

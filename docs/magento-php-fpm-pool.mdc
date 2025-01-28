@@ -1,1 +1,83 @@
- 
+# Magento PHP-FPM Pool 配置
+
+## 概述
+
+为每个 Magento 站点创建独立的 PHP-FPM Pool，实现：
+- 进程隔离
+- 独立的资源限制
+- 单独的错误日志
+- 站点级别的 PHP 配置
+
+## 配置说明
+
+### 1. Pool 基础配置
+```ini
+[站点名称]
+user = www-data
+group = www-data
+listen = /var/run/php-fpm/站点名称.sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+```
+
+### 2. 进程管理配置
+```ini
+pm = dynamic
+pm.max_children = 50      # 最大子进程数
+pm.start_servers = 5      # 启动时创建的子进程数
+pm.min_spare_servers = 5  # 最小空闲进程数
+pm.max_spare_servers = 35 # 最大空闲进程数
+pm.max_requests = 500     # 每个子进程处理多少请求后重启
+```
+
+### 3. PHP 设置
+```ini
+php_admin_value[memory_limit] = 4G
+php_admin_value[max_execution_time] = 1800
+php_admin_value[date.timezone] = UTC
+php_admin_value[error_log] = /proc/self/fd/2
+php_admin_flag[log_errors] = on
+```
+
+### 4. Session 配置
+```ini
+php_value[session.save_handler] = redis
+php_value[session.save_path] = "tcp://redis:6379/1"
+```
+
+### 5. Magento 特定设置
+```ini
+php_value[max_input_vars] = 10000
+php_value[post_max_size] = 64M
+php_value[upload_max_filesize] = 64M
+php_value[realpath_cache_size] = 10M
+php_value[realpath_cache_ttl] = 7200
+```
+
+## 部署说明
+
+1. 配置存储在 ConfigMap 中：
+   ```yaml
+   apiVersion: v1
+   kind: ConfigMap
+   metadata:
+     name: 站点名称-php-fpm-pool
+     namespace: magento-shared
+   ```
+
+2. 配置文件挂载到 PHP-FPM Pod：
+   ```yaml
+   volumeMounts:
+   - name: 站点名称-pool-config
+     mountPath: /usr/local/etc/php-fpm.d/站点名称.conf
+     subPath: 站点名称.conf
+   ```
+
+## 注意事项
+
+1. Pool 配置更改后需要重启 PHP-FPM Pod
+2. 确保 sock 文件权限正确
+3. 监控进程数量，适时调整 pm.* 参数
+4. 注意内存限制要与容器资源限制匹配
+5. Session 配置要与 Redis 数据库编号对应 

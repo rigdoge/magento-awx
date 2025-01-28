@@ -1,39 +1,18 @@
----
-description: 
-globs: 
----
-1. 
+cat << EOF > tmp/staging-issuer.yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: your-email@example.com  # 请替换为您的邮箱
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+EOF
 
-NAME   STATUS   ROLES                  AGE    VERSION
-ks-1   Ready    control-plane,master   2d3h   v1.31.4+k3s1
-NAMESPACE              NAME                                         READY   STATUS      RESTARTS   AGE
-awx                    automation-job-200-lj8bj                     1/1     Running     0          84m
-awx                    awx-demo-postgres-13-0                       1/1     Running     0          8h
-awx                    awx-demo-web-864c87cfd5-4g4wq                3/3     Running     0          8h
-cert-manager           cert-manager-8548485d7f-x4dh4                1/1     Running     0          9h
-cert-manager           cert-manager-cainjector-595f65bc48-p6dkr     1/1     Running     0          9h
-cert-manager           cert-manager-webhook-6fc5768c5d-n7kln        1/1     Running     0          9h
-ingress-nginx          ingress-nginx-controller-7657f6db5f-pl56q    1/1     Running     0          9h
-kube-system            coredns-ccb96694c-hlz7z                      1/1     Running     0          2d3h
-kube-system            helm-install-traefik-crd-99s7d               0/1     Completed   0          2d3h
-kube-system            helm-install-traefik-rf4ck                   0/1     Completed   1          2d3h
-kube-system            local-path-provisioner-5cf85fd84d-qpb8d      1/1     Running     0          2d3h
-kube-system            metrics-server-5985cbc9d7-drrp5              1/1     Running     0          2d3h
-kube-system            svclb-traefik-a5b78e62-jrhvx                 2/2     Running     0          2d3h
-kube-system            traefik-57b79cf995-xcpk7                     1/1     Running     0          2d3h
-kubernetes-dashboard   dashboard-metrics-scraper-6b96ff7878-2npl5   1/1     Running     0          29h
-kubernetes-dashboard   kubernetes-dashboard-8696f5f494-nqq4d        1/1     Running     0          29h
-magento-shared         opensearch-fd7d78c79-vbx8c                   1/1     Running     0          26h
-magento-shared         percona-75ff6dcb58-wmt58                     1/1     Running     0          27h
-magento-shared         php-fpm-bb4f88c8f-tbdxc                      1/1     Running     0          25h
-magento-shared         rabbitmq-56b87b6f66-96nwg                    1/1     Running     0          27h
-magento-shared         redis-0                                      1/1     Running     0          4h58m
-magento-shared         varnish-749f866d4b-sbwl9                     1/1     Running     0          6h10m
-
-2. 
-
-cert-manager-8548485d7f-x4dh4              1/1     Running   0          10h
-cert-manager-cainjector-595f65bc48-p6dkr   1/1     Running   0          10h
-cert-manager-webhook-6fc5768c5d-n7kln      1/1     Running   0          10h
-
-
+kubectl apply -f tmp/staging-issuer.yaml

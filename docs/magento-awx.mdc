@@ -1,1 +1,121 @@
- 
+# Magento AWX 项目规范
+
+## 架构设计
+
+### 多站点共享服务架构
+
+在 `magento-shared` 命名空间中部署以下共享服务：
+
+1. PHP-FPM
+   - 统一的 PHP 版本和扩展
+   - 统一的配置（memory_limit = 4G 等）
+   - 所有站点共用一个 PHP-FPM 池
+
+2. MySQL/Percona
+   - 统一的数据库服务
+   - 每个站点使用独立的数据库
+   - 通过用户权限隔离
+
+3. Redis
+   - 统一的 Redis 服务
+   - 使用不同的数据库编号区分站点
+   - 用于缓存和会话存储
+
+4. RabbitMQ
+   - 统一的消息队列服务
+   - 每个站点使用独立的 Virtual Host
+   - 通过用户权限隔离
+
+5. OpenSearch
+   - 统一的搜索服务
+   - 每个站点使用独立的索引
+   - 通过索引前缀区分
+
+6. Varnish
+   - 统一的 HTTP 缓存服务
+   - 通过 VCL 配置区分不同站点
+   - 基于域名进行缓存隔离
+
+### 站点独立服务
+
+每个站点在自己的命名空间中部署：
+
+1. Nginx
+   - 每个站点独立的 Nginx 配置
+   - 独立的域名和 SSL 证书
+   - 反向代理到共享的 PHP-FPM
+   - 静态文件缓存配置
+   - Varnish 集成配置
+
+### 资源配置建议
+
+1. PHP-FPM
+   ```yaml
+   resources:
+     requests:
+       memory: "4Gi"
+       cpu: "1"
+     limits:
+       memory: "6Gi"
+       cpu: "2"
+   ```
+
+2. MySQL/Percona
+   ```yaml
+   resources:
+     requests:
+       memory: "2Gi"
+       cpu: "1"
+     limits:
+       memory: "4Gi"
+       cpu: "2"
+   ```
+
+3. Redis
+   ```yaml
+   resources:
+     requests:
+       memory: "1Gi"
+       cpu: "0.5"
+     limits:
+       memory: "2Gi"
+       cpu: "1"
+   ```
+
+4. OpenSearch
+   ```yaml
+   resources:
+     requests:
+       memory: "2Gi"
+       cpu: "1"
+     limits:
+       memory: "4Gi"
+       cpu: "2"
+   ```
+
+5. Nginx (每个站点)
+   ```yaml
+   resources:
+     requests:
+       memory: "512Mi"
+       cpu: "0.5"
+     limits:
+       memory: "1Gi"
+       cpu: "1"
+   ```
+
+### 安装步骤
+
+1. 确保共享服务已经在 `magento-shared` 命名空间中运行
+2. 为新站点创建命名空间
+3. 部署站点特定的 Nginx
+4. 配置 Magento 2 连接到共享服务
+5. 初始化站点数据
+
+### 维护注意事项
+
+1. 共享服务的更新需要统一规划
+2. 数据库备份需要包含所有站点
+3. Redis 数据库编号需要统一分配
+4. RabbitMQ 虚拟主机需要统一命名
+5. OpenSearch 索引需要使用站点前缀 

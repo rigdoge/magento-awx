@@ -1,5 +1,30 @@
 ---
-description: 
-globs: 
+description: AWX 域名配置规则
+globs: ["ansible/install/*.yml"]
 ---
- 
+
+# AWX 域名配置
+
+## 基本信息
+- 域名: awx.tschenfeng.com
+- 命名空间: awx
+- 服务名: awx-demo-service
+
+## SSL 配置
+- 证书类型: Let's Encrypt
+- 证书密钥名: awx-cert-tls
+- Issuer: letsencrypt-staging (测试) / letsencrypt-prod (生产)
+
+## Ingress 配置
+- Ingress Class: nginx
+- 超时设置:
+  - proxy-connect-timeout: 3600
+  - proxy-read-timeout: 3600
+  - proxy-send-timeout: 3600
+- SSL 重定向: 启用
+
+## 注意事项
+1. 确保 DNS 已正确配置
+2. 使用 staging 证书进行测试
+3. 测试成功后再切换到生产证书
+4. 证书自动续期已配置 
