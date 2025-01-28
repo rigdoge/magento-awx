@@ -43,9 +43,7 @@
       pid = /var/run/php-fpm.pid
       error_log = /proc/self/fd/2
       log_level = notice
-      emergency_restart_threshold = 10
-      emergency_restart_interval = 1m
-      process_control_timeout = 10s
+      daemonize = no
       include=/usr/local/etc/php-fpm.d/*.conf
     
     php_fpm_pool_config: |
@@ -108,6 +106,8 @@
                     name: "{{ site_name }}-php-fpm-config"
                 containers:
                 - name: php-fpm
+                  command: ["php-fpm"]
+                  args: ["-F", "-y", "/usr/local/etc/php-fpm.conf"]
                   volumeMounts:
                   - name: php-fpm-config
                     mountPath: "/usr/local/etc/php-fpm.conf"
