@@ -15,26 +15,81 @@
         set -x
         echo "=== 开始卸载 PHP-FPM ==="
         
+        # 强制删除 Pod
+        echo "强制删除 Pod..."
+        kubectl delete pod -n {{ use_namespace }} -l app=php-fpm --force --grace-period=0 || true
+        
         # 删除 Service
-        kubectl delete service -n {{ use_namespace }} php-fpm || true
+        echo "删除 Service..."
+        kubectl delete service -n {{ use_namespace }} php-fpm --force --grace-period=0 || true
         
         # 删除 Deployment
-        kubectl delete deployment -n {{ use_namespace }} php-fpm || true
+        echo "删除 Deployment..."
+        kubectl delete deployment -n {{ use_namespace }} php-fpm --force --grace-period=0 || true
+        
+        # 删除 ConfigMap
+        echo "删除 ConfigMap..."
+        kubectl delete configmap -n {{ use_namespace }} -l app=php-fpm --force --grace-period=0 || true
+        
+        # 删除 PVC
+        echo "删除 PVC..."
+        kubectl delete pvc -n {{ use_namespace }} -l app=php-fpm --force --grace-period=0 || true
         
         # 等待资源清理完成
         echo "等待资源清理完成..."
+        sleep 10
+        
+        # 强制删除卡住的 Pod
+        echo "检查是否有卡住的 Pod..."
+        STUCK_PODS=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[*].metadata.name}' || true)
+        if [ ! -z "$STUCK_PODS" ]; then
+          echo "发现卡住的 Pod，强制删除..."
+          for pod in $STUCK_PODS; do
+            kubectl delete pod -n {{ use_namespace }} $pod --force --grace-period=0 || true
+          done
+        fi
+        
+        # 再次等待清理完成
+        echo "等待最终清理完成..."
         sleep 5
         
         echo -e "\n=== 清理结果 ==="
-        echo "Service 状态:"
+        echo "Pod 状态:"
+        kubectl get pods -n {{ use_namespace }} -l app=php-fpm
+        echo -e "\nService 状态:"
         kubectl get service -n {{ use_namespace }} php-fpm
         echo -e "\nDeployment 状态:"
         kubectl get deployment -n {{ use_namespace }} php-fpm
+        echo -e "\nConfigMap 状态:"
+        kubectl get configmap -n {{ use_namespace }} -l app=php-fpm
+        echo -e "\nPVC 状态:"
+        kubectl get pvc -n {{ use_namespace }} -l app=php-fpm
       register: cleanup_result
 
     - name: 显示清理结果
       debug:
         msg: "{{ cleanup_result.stdout_lines }}"
+
+    - name: 清理命名空间（如果为空）
+      shell: |
+        set -x
+        echo "=== 检查命名空间是否为空 ==="
+        
+        # 检查命名空间中的资源
+        RESOURCES=$(kubectl get all -n {{ use_namespace }} -o name || true)
+        if [ -z "$RESOURCES" ]; then
+          echo "命名空间为空，删除命名空间..."
+          kubectl delete namespace {{ use_namespace }} || true
+        else
+          echo "命名空间不为空，保留命名空间"
+          echo "剩余资源:"
+          echo "$RESOURCES"
+        fi
+      register: namespace_cleanup_result
+
+    - name: 显示命名空间清理结果
+      debug:
+        msg: "{{ namespace_cleanup_result.stdout_lines }}"
 
     - name: 清理 PHP 包
       shell: |
