@@ -42,15 +42,13 @@
                 app: php-fpm
             spec:
               securityContext:
-                runAsUser: 0
-                runAsGroup: 0
-                fsGroup: 0
+                runAsUser: 1001
+                runAsGroup: 1001
+                fsGroup: 1001
               containers:
               - name: php-fpm
                 image: bitnami/php-fpm:8.3
-                securityContext:
-                  runAsNonRoot: true
-                  runAsUser: 1001
+                securityContext: {}
                 ports:
                 - containerPort: 9000
                 resources:
