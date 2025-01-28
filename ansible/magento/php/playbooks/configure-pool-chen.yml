@@ -5,6 +5,7 @@
   vars:
     site_name: "{{ site_name }}"
     php_fpm_ns: "{{ php_fpm_ns }}"
+    config_filename: "chen.conf"
     php_fpm_config: |
       [chen]
       ; 用户和组配置
@@ -74,7 +75,7 @@
             name: "{{ site_name }}-php-fpm-config"
             namespace: "{{ php_fpm_ns }}"
           data:
-            "{{ site_name }}.conf": "{{ php_fpm_config }}"
+            "chen.conf": "{{ php_fpm_config }}"
 
     - name: 更新 PHP-FPM Deployment
       kubernetes.core.k8s:
@@ -103,7 +104,7 @@
                   volumeMounts:
                   - name: php-fpm-config
                     mountPath: "/usr/local/etc/php-fpm.d/{{ site_name }}.conf"
-                    subPath: "{{ site_name }}.conf"
+                    subPath: "chen.conf"
                   resources:
                     limits:
                       memory: "4Gi"
