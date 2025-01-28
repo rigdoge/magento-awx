@@ -39,7 +39,7 @@
 
     php_fpm_main_config: |
       [global]
-      pid = /var/run/php-fpm.pid
+      pid = /tmp/php-fpm.pid
       error_log = /proc/self/fd/2
       log_level = notice
       daemonize = no
@@ -47,10 +47,6 @@
     
     php_fpm_pool_config: |
       [www]
-      ; 用户和组配置
-      user = www-data
-      group = www-data
-
       ; 监听配置
       listen = 9000
       
