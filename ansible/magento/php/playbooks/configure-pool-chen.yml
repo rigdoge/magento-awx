@@ -85,7 +85,13 @@
             name: "{{ site_name }}-php-fpm"
             namespace: "{{ php_fpm_namespace }}"
           spec:
+            selector:
+              matchLabels:
+                app: "{{ site_name }}-php-fpm"
             template:
+              metadata:
+                labels:
+                  app: "{{ site_name }}-php-fpm"
               spec:
                 volumes:
                 - name: php-fpm-config
@@ -101,4 +107,24 @@
                     limits:
                       memory: "4Gi"
                     requests:
-                      memory: "4Gi" 
+                      memory: "4Gi"
+                  ports:
+                  - containerPort: 9000
+                    name: fastcgi
+
+    - name: 创建 PHP-FPM Service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ site_name }}-php-fpm"
+            namespace: "{{ php_fpm_namespace }}"
+          spec:
+            selector:
+              app: "{{ site_name }}-php-fpm"
+            ports:
+            - name: fastcgi
+              port: 9000
+              targetPort: fastcgi 
