@@ -7,22 +7,37 @@
     php_fpm_ns: "{{ php_fpm_ns }}"
     config_filename: "chen.conf"
     php_ini_config: |
+      ; PHP 基础设置
       memory_limit = 4G
       max_execution_time = 300
       max_input_time = 300
       post_max_size = 64M
       upload_max_filesize = 64M
-      date.timezone = Asia/Shanghai
+      max_input_vars = 10000
+      
+      ; 错误处理
+      display_errors = Off
+      display_startup_errors = Off
+      error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+      log_errors = On
+      error_log = /proc/self/fd/2
+      
+      ; 性能优化
       opcache.enable = 1
       opcache.memory_consumption = 512
       opcache.max_accelerated_files = 60000
       opcache.revalidate_freq = 0
       realpath_cache_size = 4096K
       realpath_cache_ttl = 600
-      max_input_vars = 10000
-      display_errors = Off
-      display_startup_errors = Off
-      error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+      
+      ; 时区设置
+      date.timezone = Asia/Shanghai
+      
+      ; Session 配置
+      session.save_handler = redis
+      session.save_path = "tcp://redis:6379/1"
+      session.gc_maxlifetime = 86400
+    
     php_fpm_config: |
       [chen]
       ; 用户和组配置
@@ -49,39 +64,6 @@
       ; 慢查询日志
       slowlog = /proc/self/fd/2
       request_slowlog_timeout = 10s
-
-      ; 站点特定设置
-      php_admin_value[error_log] = /proc/self/fd/2
-      php_admin_flag[log_errors] = on
-
-      ; PHP 设置
-      php_admin_value[memory_limit] = 4G
-      php_admin_value[max_execution_time] = 300
-      php_admin_value[max_input_time] = 300
-      php_admin_value[post_max_size] = 64M
-      php_admin_value[upload_max_filesize] = 64M
-
-      ; 站点特定设置
-      php_admin_value[date.timezone] = Asia/Shanghai
-
-      ; Magento 2 优化设置
-      php_admin_value[opcache.enable] = 1
-      php_admin_value[opcache.memory_consumption] = 512
-      php_admin_value[opcache.max_accelerated_files] = 60000
-      php_admin_value[opcache.revalidate_freq] = 0
-      php_admin_value[realpath_cache_size] = 4096K
-      php_admin_value[realpath_cache_ttl] = 600
-
-      ; Session 配置
-      php_admin_value[session.save_handler] = redis
-      php_admin_value[session.save_path] = "tcp://redis:6379/1"
-      php_admin_value[session.gc_maxlifetime] = 86400
-
-      ; 其他 PHP 设置
-      php_admin_value[max_input_vars] = 10000
-      php_admin_flag[display_errors] = off
-      php_admin_flag[display_startup_errors] = off
-      php_admin_value[error_reporting] = E_ALL & ~E_DEPRECATED & ~E_STRICT
   
   tasks:
     - name: 创建 ConfigMap for PHP-FPM
@@ -117,8 +99,15 @@
                 - name: php-fpm
                   volumeMounts:
                   - name: php-fpm-config
-                    mountPath: "/usr/local/etc/php-fpm.d/chen.conf"
-                    subPath: "chen.conf"
+                    mountPath: "/usr/local/etc/php-fpm.d"
                   - name: php-fpm-config
-                    mountPath: "/usr/local/etc/php/conf.d/99-chen.ini"
-                    subPath: "php.ini" 
+                    mountPath: "/usr/local/etc/php/conf.d"
+                  lifecycle:
+                    postStart:
+                      exec:
+                        command:
+                        - /bin/sh
+                        - -c
+                        - |
+                          cp /usr/local/etc/php-fpm.d/chen.conf /usr/local/etc/php-fpm.d/www.conf
+                          chmod 644 /usr/local/etc/php-fpm.d/www.conf 
