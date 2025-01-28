@@ -4,37 +4,67 @@
   gather_facts: no
   vars:
     use_namespace: "{{ namespace }}"
+    max_retries: "{{ retries | default('3') }}"
+    init_delay: "{{ delay | default('30') }}"
 
   tasks:
     - name: 获取 PHP-FPM Pod 名称
       shell: |
         set -x  # 启用调试模式
-        POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm,role=shared -o jsonpath='{.items[0].metadata.name}')
-        if [ -z "$POD_NAME" ]; then
-          echo "未找到 PHP-FPM Pod"
-          exit 1
-        fi
-        echo $POD_NAME
+        set -e  # 遇到错误就退出
+        
+        for i in $(seq 1 {{ max_retries }}); do
+          echo "尝试获取 Pod 名称... 第 $i 次"
+          POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm,role=shared -o jsonpath='{.items[0].metadata.name}' || true)
+          
+          if [ ! -z "$POD_NAME" ]; then
+            echo "找到 Pod: $POD_NAME"
+            echo "$POD_NAME"
+            exit 0
+          fi
+          
+          if [ $i -eq {{ max_retries }} ]; then
+            echo "未找到 PHP-FPM Pod"
+            exit 1
+          fi
+          
+          echo "未找到 Pod，等待下一次尝试..."
+          sleep {{ init_delay }}
+        done
       register: pod_name
 
     - name: 检查 Pod 状态
       shell: |
         set -x  # 启用调试模式
+        set -e  # 遇到错误就退出
+        
         POD_NAME="{{ pod_name.stdout }}"
         echo "检查 Pod $POD_NAME 状态..."
         
-        # 显示 Pod 详细信息
-        echo "Pod 详细信息:"
-        kubectl describe pod -n {{ use_namespace }} $POD_NAME
-        
-        # 检查 Pod 状态
-        STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
-        echo "Pod 状态: $STATUS"
-        
-        if [ "$STATUS" != "Running" ]; then
-          echo "Pod 未处于运行状态"
-          exit 1
-        fi
+        for i in $(seq 1 {{ max_retries }}); do
+          echo "检查 Pod 状态... 第 $i 次"
+          
+          # 显示 Pod 详细信息
+          echo "Pod 详细信息:"
+          kubectl describe pod -n {{ use_namespace }} $POD_NAME
+          
+          # 检查 Pod 状态
+          STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
+          echo "Pod 状态: $STATUS"
+          
+          if [ "$STATUS" = "Running" ]; then
+            echo "Pod 运行正常"
+            exit 0
+          fi
+          
+          if [ $i -eq {{ max_retries }} ]; then
+            echo "Pod 未处于运行状态"
+            exit 1
+          fi
+          
+          echo "Pod 未就绪，等待下一次检查..."
+          sleep {{ init_delay }}
+        done
       register: pod_status
 
     - name: 显示 Pod 状态

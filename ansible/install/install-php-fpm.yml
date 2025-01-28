@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('magento-shared') }}"  # 默认使用共享命名空间
+    use_namespace: "{{ namespace }}"
     use_nodeport: "{{ nodeport | default('9000') }}"
     max_retries: "{{ retries | default('3') }}"
     init_delay: "{{ delay | default('30') }}"
@@ -11,6 +11,9 @@
   tasks:
     - name: 检查命名空间
       shell: |
+        set -x  # 启用调试模式
+        set -e  # 遇到错误就退出
+        
         if [ "{{ use_namespace }}" != "default" ]; then
           echo "创建命名空间: {{ use_namespace }}"
           kubectl create namespace {{ use_namespace }} || true
