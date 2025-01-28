@@ -1,6 +1,6 @@
 ---
 - name: 安装 PHP-FPM 扩展（第三批）
-  hosts: k3s
+  hosts: all
   gather_facts: no
   vars:
     use_namespace: "{{ namespace | default('magento-shared') }}"
