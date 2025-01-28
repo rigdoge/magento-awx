@@ -47,10 +47,10 @@
                 fsGroup: 0
               containers:
               - name: php-fpm
-                image: php:8.3-fpm
+                image: bitnami/php-fpm:8.3
                 securityContext:
-                  privileged: true
-                  allowPrivilegeEscalation: true
+                  runAsNonRoot: true
+                  runAsUser: 1001
                 ports:
                 - containerPort: 9000
                 resources:
@@ -60,6 +60,13 @@
                   limits:
                     cpu: "1"
                     memory: "1Gi"
+                env:
+                - name: PHP_FPM_LISTEN_PORT
+                  value: "9000"
+                - name: PHP_MEMORY_LIMIT
+                  value: "512M"
+                - name: PHP_MAX_EXECUTION_TIME
+                  value: "300"
                 readinessProbe:
                   tcpSocket:
                     port: 9000
@@ -78,16 +85,10 @@
                   failureThreshold: 3
                 volumeMounts:
                 - name: shared-data
-                  mountPath: /var/www/html
-                - name: php-fpm-config
-                  mountPath: /usr/local/etc/php-fpm.d/www.conf
-                  subPath: www.conf
+                  mountPath: /bitnami/php-fpm/html
               volumes:
               - name: shared-data
                 emptyDir: {}
-              - name: php-fpm-config
-                configMap:
-                  name: php-fpm-config
         ---
         apiVersion: v1
         kind: ConfigMap
