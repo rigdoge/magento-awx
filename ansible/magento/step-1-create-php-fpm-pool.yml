@@ -12,31 +12,6 @@
       api_key: "{{ k8s_api_key }}"
       validate_certs: "{{ k8s_validate_certs | default(false) }}"
 
-  pre_tasks:
-    - name: 创建 Service Account 和 RBAC
-      kubernetes.core.k8s:
-        state: present
-        src: k8s/awx-rbac.yml
-        validate_certs: "{{ k8s_validate_certs | default(false) }}"
-      ignore_errors: yes
-
-    - name: 获取 Service Account Token
-      kubernetes.core.k8s_info:
-        api_version: v1
-        kind: Secret
-        namespace: magento-shared
-        label_selectors:
-          - kubernetes.io/service-account.name=awx-service-account
-        host: "{{ k8s_auth.host }}"
-        validate_certs: "{{ k8s_validate_certs | default(false) }}"
-      register: sa_token
-      ignore_errors: yes
-
-    - name: 设置 API Key
-      set_fact:
-        k8s_auth: "{{ k8s_auth | combine({'api_key': (sa_token.resources[0].data.token | b64decode) if sa_token.resources is defined and sa_token.resources | length > 0 else k8s_api_key}) }}"
-      when: sa_token is defined and not sa_token.failed
-
   tasks:
     - name: 显示连接信息
       debug:
