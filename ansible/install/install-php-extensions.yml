@@ -214,13 +214,45 @@
         POD_NAME="{{ pod_name.stdout }}"
         echo "=== 验证安装 ==="
         
-        echo "PHP 版本信息:"
+        # 检查 PHP CLI
+        echo "PHP CLI 版本和扩展:"
         kubectl exec -n {{ use_namespace }} $POD_NAME -- php -v
-        
-        echo "已安装扩展列表:"
         kubectl exec -n {{ use_namespace }} $POD_NAME -- php -m
+        
+        # 检查 PHP-FPM
+        echo "PHP-FPM 版本和配置:"
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- php-fpm8.3 -v
+        
+        # 检查扩展配置目录
+        echo "PHP 配置目录:"
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c 'ls -la /etc/php/8.3/cli/conf.d/'
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c 'ls -la /etc/php/8.3/fpm/conf.d/'
+        
+        # 检查特定扩展是否安装
+        echo "检查关键扩展:"
+        for ext in mysql gd redis opcache intl soap zip bcmath; do
+          echo "检查 $ext 扩展..."
+          kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c "php -r \"echo extension_loaded('$ext') ? '$ext: 已启用\n' : '$ext: 未启用\n';\""
+        done
+        
+        # 检查 PHP 配置信息
+        echo "PHP 配置信息:"
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- php --ini
       register: verify_result
 
     - name: 显示验证结果
       debug:
-        msg: "{{ verify_result.stdout_lines }}" 
+        msg: "{{ verify_result.stdout_lines }}"
+
+    - name: 重启 PHP-FPM 服务
+      shell: |
+        set -x  # 启用调试模式
+        POD_NAME="{{ pod_name.stdout }}"
+        echo "=== 重启 PHP-FPM 服务 ==="
+        
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c 'service php8.3-fpm restart || systemctl restart php8.3-fpm || kill -USR2 $(cat /var/run/php-fpm.pid)'
+      register: restart_result
+
+    - name: 显示重启结果
+      debug:
+        msg: "{{ restart_result.stdout_lines }}" 
