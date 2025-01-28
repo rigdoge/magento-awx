@@ -122,6 +122,7 @@
         # 切换到 root 用户并执行命令
         kubectl exec -n {{ use_namespace }} $POD_NAME -- bash << 'EOF'
         set -x  # 启用调试模式
+        set -e  # 遇到错误就退出
         
         # 检查当前用户
         echo "当前用户:"
@@ -129,18 +130,36 @@
         
         # 安装 Redis 扩展
         echo "安装 Redis..."
-        pecl install redis
-        docker-php-ext-enable redis
+        pecl install redis || { echo "Redis 安装失败"; exit 1; }
+        docker-php-ext-enable redis || { echo "Redis 启用失败"; exit 1; }
         
         # 安装 mysqli 扩展
         echo "安装 mysqli..."
-        docker-php-ext-install mysqli
+        docker-php-ext-install mysqli || { echo "mysqli 安装失败"; exit 1; }
+        
+        # 验证扩展安装
+        echo "验证扩展安装..."
+        php -m | grep -E 'redis|mysqli' || { echo "扩展未正确安装"; exit 1; }
+        
+        # 检查 PHP 配置目录
+        echo "检查 PHP 配置目录..."
+        ls -la /usr/local/etc/php/conf.d/
+        
+        # 检查扩展配置
+        echo "检查扩展配置..."
+        php --ini
         EOF
       register: ext_result
 
     - name: 显示扩展安装结果
       debug:
         msg: "{{ ext_result.stdout_lines }}"
+        verbosity: 2
+
+    - name: 检查扩展安装结果
+      fail:
+        msg: "PHP 扩展安装失败，请检查日志"
+      when: ext_result.rc != 0
 
     - name: 验证安装
       shell: |
