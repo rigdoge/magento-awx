@@ -210,6 +210,17 @@
                 containers:
                   - name: php-fpm
                     image: docker.io/library/php:8.3-fpm
+                    env:
+                      - name: PHP_FPM_ERROR_LOG
+                        value: /proc/self/fd/2
+                      - name: PHP_FPM_LOG_LEVEL
+                        value: notice
+                    command:
+                      - php-fpm
+                      - --nodaemonize
+                      - --force-stderr
+                      - --fpm-config
+                      - /usr/local/etc/php-fpm.conf
                     resources:
                       requests:
                         cpu: "200m"
