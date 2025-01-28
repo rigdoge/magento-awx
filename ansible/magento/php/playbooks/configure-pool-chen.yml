@@ -37,8 +37,18 @@
       session.save_handler = redis
       session.save_path = "tcp://redis:6379/1"
       session.gc_maxlifetime = 86400
+
+    php_fpm_main_config: |
+      [global]
+      pid = /var/run/php-fpm.pid
+      error_log = /proc/self/fd/2
+      log_level = notice
+      emergency_restart_threshold = 10
+      emergency_restart_interval = 1m
+      process_control_timeout = 10s
+      include=/usr/local/etc/php-fpm.d/*.conf
     
-    php_fpm_config: |
+    php_fpm_pool_config: |
       [www]
       ; 用户和组配置
       user = www-data
@@ -76,7 +86,8 @@
             name: "{{ site_name }}-php-fpm-config"
             namespace: "{{ php_fpm_ns }}"
           data:
-            "www.conf": "{{ php_fpm_config }}"
+            "php-fpm.conf": "{{ php_fpm_main_config }}"
+            "www.conf": "{{ php_fpm_pool_config }}"
             "php.ini": "{{ php_ini_config }}"
 
     - name: 更新 PHP-FPM Deployment
@@ -98,6 +109,9 @@
                 containers:
                 - name: php-fpm
                   volumeMounts:
+                  - name: php-fpm-config
+                    mountPath: "/usr/local/etc/php-fpm.conf"
+                    subPath: "php-fpm.conf"
                   - name: php-fpm-config
                     mountPath: "/usr/local/etc/php-fpm.d/www.conf"
                     subPath: "www.conf"
