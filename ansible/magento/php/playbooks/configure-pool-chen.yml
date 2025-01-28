@@ -11,11 +11,8 @@
       group = www-data
 
       ; 监听配置
-      listen = /var/run/php-fpm-chen.sock
-      listen.owner = www-data
-      listen.group = www-data
-      listen.mode = 0660
-
+      listen = 9000
+      
       ; 进程管理
       pm = dynamic
       pm.max_children = 30
@@ -98,8 +95,8 @@
                 - name: php-fpm
                   volumeMounts:
                   - name: php-fpm-config
-                    mountPath: /usr/local/etc/php-fpm.d/{{ site_name }}.conf
-                    subPath: {{ site_name }}.conf
+                    mountPath: "/usr/local/etc/php-fpm.d/{{ site_name }}.conf"
+                    subPath: "{{ site_name }}.conf"
                   resources:
                     limits:
                       memory: "4Gi"
