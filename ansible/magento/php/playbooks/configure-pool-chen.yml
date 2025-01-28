@@ -75,4 +75,27 @@
             name: "{{ site_name }}-php-fpm-config"
             namespace: "{{ php_fpm_ns }}"
           data:
-            "chen.conf": "{{ php_fpm_config }}" 
+            "chen.conf": "{{ php_fpm_config }}"
+
+    - name: 更新 PHP-FPM Deployment
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: php-fpm
+            namespace: "{{ php_fpm_ns }}"
+          spec:
+            template:
+              spec:
+                volumes:
+                - name: php-fpm-config
+                  configMap:
+                    name: "{{ site_name }}-php-fpm-config"
+                containers:
+                - name: php-fpm
+                  volumeMounts:
+                  - name: php-fpm-config
+                    mountPath: "/usr/local/etc/php-fpm.d/chen.conf"
+                    subPath: "chen.conf" 
