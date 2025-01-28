@@ -47,7 +47,7 @@
                 fsGroup: 0
               containers:
               - name: php-fpm
-                image: php:8.3-fpm
+                image: debian:bullseye-slim
                 securityContext:
                   privileged: true
                   allowPrivilegeEscalation: true

@@ -219,25 +219,28 @@
         kubectl exec -n {{ use_namespace }} $POD_NAME -- php -v
         kubectl exec -n {{ use_namespace }} $POD_NAME -- php -m
         
-        # 检查 PHP-FPM
-        echo "PHP-FPM 版本和配置:"
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- php-fpm8.3 -v
+        # 检查扩展安装状态
+        echo "检查扩展安装包:"
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- dpkg -l | grep php8.3
         
-        # 检查扩展配置目录
-        echo "PHP 配置目录:"
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c 'ls -la /etc/php/8.3/cli/conf.d/'
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c 'ls -la /etc/php/8.3/fpm/conf.d/'
+        # 检查扩展配置文件
+        echo "检查扩展配置文件:"
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c 'for f in /etc/php/8.3/cli/conf.d/*.ini; do echo "=== $f ==="; cat $f; done'
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c 'for f in /etc/php/8.3/fpm/conf.d/*.ini; do echo "=== $f ==="; cat $f; done'
         
-        # 检查特定扩展是否安装
+        # 检查 PHP 配置
+        echo "PHP 配置信息:"
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- php -i | grep "Loaded Configuration File"
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- php -i | grep "Scan this dir for additional .ini files"
+        
+        # 检查特定扩展
         echo "检查关键扩展:"
         for ext in mysql gd redis opcache intl soap zip bcmath; do
           echo "检查 $ext 扩展..."
           kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c "php -r \"echo extension_loaded('$ext') ? '$ext: 已启用\n' : '$ext: 未启用\n';\""
+          echo "查找 $ext 相关文件..."
+          kubectl exec -n {{ use_namespace }} $POD_NAME -- find /etc/php/8.3 -name "*$ext*"
         done
-        
-        # 检查 PHP 配置信息
-        echo "PHP 配置信息:"
-        kubectl exec -n {{ use_namespace }} $POD_NAME -- php --ini
       register: verify_result
 
     - name: 显示验证结果
