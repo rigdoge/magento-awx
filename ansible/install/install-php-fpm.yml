@@ -151,43 +151,78 @@
 
     - name: 应用 PHP-FPM 配置
       shell: |
-        kubectl apply -f /tmp/php-fpm.yaml
-        echo "等待 Pod 创建..."
+        set -x  # 启用调试模式
         
+        echo "=== 应用配置 ==="
+        kubectl apply -f /tmp/php-fpm.yaml
+        
+        echo "=== 等待 Pod 创建 ==="
         for i in $(seq 1 {{ max_retries }}); do
           echo "检查 Pod 创建进度... 第 $i 次"
+          
+          # 显示所有 Pod
+          echo "当前所有 Pod:"
+          kubectl get pods -n {{ use_namespace }} -o wide
+          
+          # 检查特定 Pod
           if kubectl get pods -n {{ use_namespace }} -l app=php-fpm --no-headers | grep -q .; then
             echo "Pod 已创建"
             break
           fi
+          
           if [ $i -eq {{ max_retries }} ]; then
             echo "Pod 创建超时"
+            echo "查看部署状态:"
+            kubectl get deployment -n {{ use_namespace }} php-fpm -o yaml
+            echo "查看事件:"
+            kubectl get events -n {{ use_namespace }} --sort-by='.lastTimestamp'
             exit 1
           fi
+          
+          echo "等待下一次检查..."
           sleep {{ init_delay }}
         done
         
+        echo "=== 检查 Pod 状态 ==="
         POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
         echo "Pod 名称: $POD_NAME"
         
         for i in $(seq 1 {{ max_retries }}); do
           echo "检查 Pod 状态... 第 $i 次"
+          
+          # 显示 Pod 详情
+          echo "Pod 详细信息:"
+          kubectl describe pod -n {{ use_namespace }} $POD_NAME
+          
+          # 检查 Pod 状态
           STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
+          echo "Pod 状态: $STATUS"
+          
           if [ "$STATUS" = "Running" ]; then
             echo "Pod 已就绪"
             
+            # 检查容器日志
+            echo "容器日志:"
+            kubectl logs -n {{ use_namespace }} $POD_NAME
+            
             # 验证 PHP-FPM 是否正常运行
             echo "验证 PHP-FPM 状态..."
-            if kubectl exec -n {{ use_namespace }} $POD_NAME -- php-fpm -v; then
-              echo "PHP-FPM 基础环境检查通过"
-              break
+            if kubectl exec -n {{ use_namespace }} $POD_NAME -- bash -c 'ps aux | grep php-fpm'; then
+              echo "PHP-FPM 进程正在运行"
+              if kubectl exec -n {{ use_namespace }} $POD_NAME -- php-fpm -v; then
+                echo "PHP-FPM 基础环境检查通过"
+                break
+              fi
             fi
           fi
+          
           if [ $i -eq {{ max_retries }} ]; then
             echo "Pod 启动失败，当前状态: $STATUS"
-            kubectl describe pod -n {{ use_namespace }} $POD_NAME
+            echo "查看事件:"
+            kubectl get events -n {{ use_namespace }} --sort-by='.lastTimestamp'
             exit 1
           fi
+          
           echo "当前状态: $STATUS，等待下一次检查..."
           sleep {{ init_delay }}
         done
