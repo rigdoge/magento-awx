@@ -3,13 +3,13 @@
   hosts: all
   gather_facts: no
   vars:
-    use_namespace: "{{ namespace | default('chen') }}"
+    use_namespace: "{{ namespace }}"
 
   tasks:
     - name: 获取 PHP-FPM Pod 名称
       shell: |
         set -x  # 启用调试模式
-        POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
+        POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm,role=shared -o jsonpath='{.items[0].metadata.name}')
         if [ -z "$POD_NAME" ]; then
           echo "未找到 PHP-FPM Pod"
           exit 1
