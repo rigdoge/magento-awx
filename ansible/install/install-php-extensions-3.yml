@@ -1,0 +1,88 @@
+---
+- name: 安装 PHP-FPM 扩展（第三批）
+  hosts: all
+  gather_facts: no
+  vars:
+    use_namespace: "{{ namespace | default('magento-shared') }}"
+
+  tasks:
+    - name: 获取 PHP-FPM Pod 名称
+      shell: |
+        set -x  # 启用调试模式
+        POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}')
+        if [ -z "$POD_NAME" ]; then
+          echo "未找到 PHP-FPM Pod"
+          exit 1
+        fi
+        echo $POD_NAME
+      register: pod_name
+
+    - name: 检查 Pod 状态
+      shell: |
+        set -x  # 启用调试模式
+        POD_NAME="{{ pod_name.stdout }}"
+        echo "检查 Pod $POD_NAME 状态..."
+        
+        # 显示 Pod 详细信息
+        echo "Pod 详细信息:"
+        kubectl describe pod -n {{ use_namespace }} $POD_NAME
+        
+        # 检查 Pod 状态
+        STATUS=$(kubectl get pod -n {{ use_namespace }} $POD_NAME -o jsonpath='{.status.phase}')
+        echo "Pod 状态: $STATUS"
+        
+        if [ "$STATUS" != "Running" ]; then
+          echo "Pod 未处于运行状态"
+          exit 1
+        fi
+      register: pod_status
+
+    - name: 显示 Pod 状态
+      debug:
+        msg: "{{ pod_status.stdout_lines }}"
+
+    - name: 安装 PHP 扩展
+      shell: |
+        set -x  # 启用调试模式
+        POD_NAME="{{ pod_name.stdout }}"
+        echo "=== 安装 PHP 扩展 ==="
+        
+        # 切换到 root 用户并执行命令
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- bash << 'EOF'
+        set -x  # 启用调试模式
+        
+        # 检查当前用户
+        echo "当前用户:"
+        whoami
+        
+        # 安装 Redis 扩展
+        echo "安装 Redis..."
+        pecl install redis
+        docker-php-ext-enable redis
+        
+        # 安装 mysqli 扩展
+        echo "安装 mysqli..."
+        docker-php-ext-install mysqli
+        EOF
+      register: ext_result
+
+    - name: 显示扩展安装结果
+      debug:
+        msg: "{{ ext_result.stdout_lines }}"
+
+    - name: 验证安装
+      shell: |
+        set -x  # 启用调试模式
+        POD_NAME="{{ pod_name.stdout }}"
+        echo "=== 验证安装 ==="
+        
+        echo "PHP 版本信息:"
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- php -v
+        
+        echo "已安装扩展列表:"
+        kubectl exec -n {{ use_namespace }} $POD_NAME -- php -m
+      register: verify_result
+
+    - name: 显示验证结果
+      debug:
+        msg: "{{ verify_result.stdout_lines }}" 
