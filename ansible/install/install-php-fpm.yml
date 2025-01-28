@@ -47,53 +47,10 @@
                 fsGroup: 0
               containers:
               - name: php-fpm
-                image: debian:bullseye-slim
+                image: php:8.3-fpm
                 securityContext:
                   privileged: true
                   allowPrivilegeEscalation: true
-                command: ["/bin/bash", "-c"]
-                args:
-                  - |
-                    set -x  # 启用调试模式
-                    
-                    echo "=== 初始化系统 ==="
-                    # 等待系统就绪
-                    sleep 10
-                    
-                    echo "=== 更新系统 ==="
-                    # 配置 apt
-                    echo "deb http://deb.debian.org/debian bullseye main" > /etc/apt/sources.list
-                    echo "deb http://security.debian.org/debian-security bullseye-security main" >> /etc/apt/sources.list
-                    echo "deb http://deb.debian.org/debian bullseye-updates main" >> /etc/apt/sources.list
-                    
-                    # 更新系统
-                    apt-get clean
-                    apt-get update -y
-                    
-                    echo "=== 安装基础工具 ==="
-                    # 安装基础工具
-                    apt-get install -y curl gnupg2 ca-certificates lsb-release apt-transport-https procps
-                    
-                    echo "=== 添加 PHP 仓库 ==="
-                    # 添加 PHP 仓库
-                    curl -sSL https://packages.sury.org/php/apt.gpg -o /etc/apt/trusted.gpg.d/php.gpg
-                    echo "deb https://packages.sury.org/php/ bullseye main" > /etc/apt/sources.list.d/php.list
-                    apt-get update -y
-                    
-                    echo "=== 安装 PHP-FPM ==="
-                    # 安装 PHP-FPM
-                    apt-get install -y php8.3-fpm
-                    
-                    echo "=== 配置 PHP-FPM ==="
-                    # 创建必要的目录
-                    mkdir -p /run/php
-                    
-                    # 修改 PHP-FPM 配置
-                    sed -i 's/^listen = .*/listen = 9000/' /etc/php/8.3/fpm/pool.d/www.conf
-                    
-                    echo "=== 启动 PHP-FPM ==="
-                    # 启动 PHP-FPM
-                    php-fpm8.3 -F --nodaemonize --allow-to-run-as-root
                 ports:
                 - containerPort: 9000
                 resources:
@@ -106,7 +63,7 @@
                 readinessProbe:
                   tcpSocket:
                     port: 9000
-                  initialDelaySeconds: 10
+                  initialDelaySeconds: 30
                   periodSeconds: 10
                   timeoutSeconds: 5
                   successThreshold: 1
@@ -114,7 +71,7 @@
                 livenessProbe:
                   tcpSocket:
                     port: 9000
-                  initialDelaySeconds: 20
+                  initialDelaySeconds: 60
                   periodSeconds: 20
                   timeoutSeconds: 5
                   successThreshold: 1
@@ -122,9 +79,36 @@
                 volumeMounts:
                 - name: shared-data
                   mountPath: /var/www/html
+                - name: php-fpm-config
+                  mountPath: /usr/local/etc/php-fpm.d/www.conf
+                  subPath: www.conf
               volumes:
               - name: shared-data
-                emptyDir: {}  # 临时存储，后续可以改为持久存储
+                emptyDir: {}
+              - name: php-fpm-config
+                configMap:
+                  name: php-fpm-config
+        ---
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: php-fpm-config
+          namespace: {{ use_namespace }}
+        data:
+          www.conf: |
+            [www]
+            user = www-data
+            group = www-data
+            listen = 9000
+            pm = dynamic
+            pm.max_children = 5
+            pm.start_servers = 2
+            pm.min_spare_servers = 1
+            pm.max_spare_servers = 3
+            pm.max_requests = 500
+            catch_workers_output = yes
+            php_admin_value[error_log] = /proc/self/fd/2
+            php_admin_flag[log_errors] = on
         ---
         apiVersion: v1
         kind: Service
