@@ -6,6 +6,23 @@
     site_name: "{{ site_name }}"
     php_fpm_ns: "{{ php_fpm_ns }}"
     config_filename: "chen.conf"
+    php_ini_config: |
+      memory_limit = 4G
+      max_execution_time = 300
+      max_input_time = 300
+      post_max_size = 64M
+      upload_max_filesize = 64M
+      date.timezone = Asia/Shanghai
+      opcache.enable = 1
+      opcache.memory_consumption = 512
+      opcache.max_accelerated_files = 60000
+      opcache.revalidate_freq = 0
+      realpath_cache_size = 4096K
+      realpath_cache_ttl = 600
+      max_input_vars = 10000
+      display_errors = Off
+      display_startup_errors = Off
+      error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
     php_fpm_config: |
       [chen]
       ; 用户和组配置
@@ -23,13 +40,6 @@
       pm.max_spare_servers = 10
       pm.max_requests = 500
 
-      ; PHP 设置
-      php_admin_value[memory_limit] = 4G
-      php_admin_value[max_execution_time] = 300
-      php_admin_value[max_input_time] = 300
-      php_admin_value[post_max_size] = 64M
-      php_admin_value[upload_max_filesize] = 64M
-
       ; 日志设置
       access.log = /proc/self/fd/2
       access.format = "%R - %u %t \"%m %r%Q%q\" %s %f %{mili}d %{kilo}M %C%%"
@@ -43,6 +53,15 @@
       ; 站点特定设置
       php_admin_value[error_log] = /proc/self/fd/2
       php_admin_flag[log_errors] = on
+
+      ; PHP 设置
+      php_admin_value[memory_limit] = 4G
+      php_admin_value[max_execution_time] = 300
+      php_admin_value[max_input_time] = 300
+      php_admin_value[post_max_size] = 64M
+      php_admin_value[upload_max_filesize] = 64M
+
+      ; 站点特定设置
       php_admin_value[date.timezone] = Asia/Shanghai
 
       ; Magento 2 优化设置
@@ -65,7 +84,7 @@
       php_admin_value[error_reporting] = E_ALL & ~E_DEPRECATED & ~E_STRICT
   
   tasks:
-    - name: 创建 ConfigMap
+    - name: 创建 ConfigMap for PHP-FPM
       kubernetes.core.k8s:
         state: present
         definition:
@@ -76,6 +95,7 @@
             namespace: "{{ php_fpm_ns }}"
           data:
             "chen.conf": "{{ php_fpm_config }}"
+            "php.ini": "{{ php_ini_config }}"
 
     - name: 更新 PHP-FPM Deployment
       kubernetes.core.k8s:
@@ -98,4 +118,7 @@
                   volumeMounts:
                   - name: php-fpm-config
                     mountPath: "/usr/local/etc/php-fpm.d/chen.conf"
-                    subPath: "chen.conf" 
+                    subPath: "chen.conf"
+                  - name: php-fpm-config
+                    mountPath: "/usr/local/etc/php/conf.d/99-chen.ini"
+                    subPath: "php.ini" 
