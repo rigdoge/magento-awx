@@ -10,6 +10,32 @@
       debug:
         msg: "准备从命名空间 {{ use_namespace }} 卸载 PHP-FPM"
 
+    - name: 强制删除 PHP-FPM 资源
+      shell: |
+        set -x
+        echo "=== 开始卸载 PHP-FPM ==="
+        
+        # 删除 Service
+        kubectl delete service -n {{ use_namespace }} php-fpm || true
+        
+        # 删除 Deployment
+        kubectl delete deployment -n {{ use_namespace }} php-fpm || true
+        
+        # 等待资源清理完成
+        echo "等待资源清理完成..."
+        sleep 5
+        
+        echo -e "\n=== 清理结果 ==="
+        echo "Service 状态:"
+        kubectl get service -n {{ use_namespace }} php-fpm
+        echo -e "\nDeployment 状态:"
+        kubectl get deployment -n {{ use_namespace }} php-fpm
+      register: cleanup_result
+
+    - name: 显示清理结果
+      debug:
+        msg: "{{ cleanup_result.stdout_lines }}"
+
     - name: 清理 PHP 包
       shell: |
         set -x
@@ -49,37 +75,4 @@
 
     - name: 显示包清理结果
       debug:
-        msg: "{{ cleanup_php_result.stdout_lines }}"
-
-    - name: 强制删除 PHP-FPM Pod
-      shell: |
-        set -x
-        echo "=== 开始卸载 PHP-FPM ==="
-        
-        # 获取 k3s 路径
-        K3S_PATH=$(which k3s || echo "/usr/local/bin/k3s")
-        
-        # 强制删除 Pod
-        $K3S_PATH kubectl delete pod -n {{ use_namespace }} -l app=php-fpm --force --grace-period=0 || true
-        
-        # 删除 Deployment
-        $K3S_PATH kubectl delete deployment -n {{ use_namespace }} php-fpm || true
-        
-        # 删除 Service
-        $K3S_PATH kubectl delete service -n {{ use_namespace }} php-fpm || true
-        
-        echo "等待资源清理完成..."
-        sleep 5
-        
-        echo -e "\n=== 清理结果 ==="
-        echo "Pod 状态:"
-        $K3S_PATH kubectl get pods -n {{ use_namespace }} -l app=php-fpm
-        echo -e "\nDeployment 状态:"
-        $K3S_PATH kubectl get deployment -n {{ use_namespace }} php-fpm
-        echo -e "\nService 状态:"
-        $K3S_PATH kubectl get service -n {{ use_namespace }} php-fpm
-      register: cleanup_result
-
-    - name: 显示清理结果
-      debug:
-        msg: "{{ cleanup_result.stdout_lines }}" 
+        msg: "{{ cleanup_php_result.stdout_lines }}" 
