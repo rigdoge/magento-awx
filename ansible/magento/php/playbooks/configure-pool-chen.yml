@@ -39,7 +39,7 @@
       session.gc_maxlifetime = 86400
     
     php_fpm_config: |
-      [chen]
+      [www]
       ; 用户和组配置
       user = www-data
       group = www-data
@@ -76,7 +76,7 @@
             name: "{{ site_name }}-php-fpm-config"
             namespace: "{{ php_fpm_ns }}"
           data:
-            "chen.conf": "{{ php_fpm_config }}"
+            "www.conf": "{{ php_fpm_config }}"
             "php.ini": "{{ php_ini_config }}"
 
     - name: 更新 PHP-FPM Deployment
@@ -99,15 +99,8 @@
                 - name: php-fpm
                   volumeMounts:
                   - name: php-fpm-config
-                    mountPath: "/usr/local/etc/php-fpm.d"
+                    mountPath: "/usr/local/etc/php-fpm.d/www.conf"
+                    subPath: "www.conf"
                   - name: php-fpm-config
-                    mountPath: "/usr/local/etc/php/conf.d"
-                  lifecycle:
-                    postStart:
-                      exec:
-                        command:
-                        - /bin/sh
-                        - -c
-                        - |
-                          cp /usr/local/etc/php-fpm.d/chen.conf /usr/local/etc/php-fpm.d/www.conf
-                          chmod 644 /usr/local/etc/php-fpm.d/www.conf 
+                    mountPath: "/usr/local/etc/php/conf.d/99-chen.ini"
+                    subPath: "php.ini" 
