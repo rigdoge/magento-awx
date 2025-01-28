@@ -1,0 +1,47 @@
+---
+- name: 配置 PHP-FPM Pool
+  hosts: all
+  vars:
+    site_name: "{{ site_name }}"
+    php_fpm_namespace: "{{ namespace }}"
+  
+  tasks:
+    - name: 创建 ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ site_name }}-php-fpm-config"
+            namespace: "{{ php_fpm_namespace }}"
+          data:
+            "{{ site_name }}.conf": "{{ lookup('file', '../pools/' + site_name + '.conf') }}"
+
+    - name: 更新 PHP-FPM Deployment
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: "{{ site_name }}-php-fpm"
+            namespace: "{{ php_fpm_namespace }}"
+          spec:
+            template:
+              spec:
+                volumes:
+                - name: php-fpm-config
+                  configMap:
+                    name: "{{ site_name }}-php-fpm-config"
+                containers:
+                - name: php-fpm
+                  volumeMounts:
+                  - name: php-fpm-config
+                    mountPath: /usr/local/etc/php-fpm.d/{{ site_name }}.conf
+                    subPath: {{ site_name }}.conf
+                  resources:
+                    limits:
+                      memory: "4Gi"
+                    requests:
+                      memory: "4Gi" 
