@@ -7,6 +7,17 @@ metadata:
   namespace: magento-shared
 
 ---
+# 永久 Token
+apiVersion: v1
+kind: Secret
+metadata:
+  name: awx-service-account-token
+  namespace: magento-shared
+  annotations:
+    kubernetes.io/service-account.name: awx-service-account
+type: kubernetes.io/service-account-token
+
+---
 # ClusterRole (已存在，但为了完整性包含在这里)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
