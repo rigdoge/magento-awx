@@ -31,18 +31,15 @@
           namespace: {{ use_namespace }}
           labels:
             app: php-fpm
-            role: shared  # 标记为共享服务
         spec:
           selector:
             matchLabels:
               app: php-fpm
-              role: shared
           replicas: 1
           template:
             metadata:
               labels:
                 app: php-fpm
-                role: shared
             spec:
               securityContext:
                 runAsUser: 0
@@ -93,11 +90,9 @@
           namespace: {{ use_namespace }}
           labels:
             app: php-fpm
-            role: shared
         spec:
           selector:
             app: php-fpm
-            role: shared
           ports:
           - name: fpm
             port: 9000

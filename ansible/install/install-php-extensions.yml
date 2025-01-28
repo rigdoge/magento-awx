@@ -15,7 +15,7 @@
         
         for i in $(seq 1 {{ max_retries }}); do
           echo "尝试获取 Pod 名称... 第 $i 次"
-          POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm,role=shared -o jsonpath='{.items[0].metadata.name}' || true)
+          POD_NAME=$(kubectl get pods -n {{ use_namespace }} -l app=php-fpm -o jsonpath='{.items[0].metadata.name}' || true)
           
           if [ ! -z "$POD_NAME" ]; then
             echo "找到 Pod: $POD_NAME"
