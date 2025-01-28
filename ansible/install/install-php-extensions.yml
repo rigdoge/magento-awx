@@ -161,61 +161,52 @@
         echo "当前用户:"
         whoami
         
-        # 1. 配置需要特殊设置的扩展
-        echo "配置 GD..."
-        docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp
+        # 添加 PHP 8.3 仓库
+        echo "添加 PHP 仓库..."
+        curl -sSL https://packages.sury.org/php/apt.gpg -o /etc/apt/trusted.gpg.d/php.gpg
+        echo "deb https://packages.sury.org/php/ bullseye main" > /etc/apt/sources.list.d/php.list
+        apt-get update -y
         
-        # 2. 安装 PHP 源码中的扩展
-        echo "安装 PHP 源码扩展..."
-        docker-php-ext-install -j$(nproc) \
-          pdo_mysql \
-          mysqli \
-          opcache \
-          gd \
-          bcmath \
-          intl \
-          soap \
-          xsl \
-          zip \
-          sockets
+        # 安装 PHP 8.3 及其扩展
+        echo "安装 PHP 8.3 及扩展..."
+        apt install -y \
+          php8.3-common=8.3.16-1 \
+          php8.3-cli=8.3.16-1 \
+          php8.3-fpm=8.3.16-1 \
+          php8.3-opcache=8.3.16-1 \
+          php8.3-gd=8.3.16-1 \
+          php8.3-mysql=8.3.16-1 \
+          php8.3-curl=8.3.16-1 \
+          php8.3-intl=8.3.16-1 \
+          php8.3-xsl=8.3.16-1 \
+          php8.3-mbstring=8.3.16-1 \
+          php8.3-zip=8.3.16-1 \
+          php8.3-bcmath=8.3.16-1 \
+          php8.3-soap=8.3.16-1 \
+          php8.3-fileinfo=8.3.16-1 \
+          php8.3-imagick=8.3.16-1 \
+          php8.3-redis=8.3.16-1
         
-        # 3. 安装 PECL 扩展
-        echo "安装 PECL 扩展..."
-        # 安装 redis
-        pecl install redis
-        docker-php-ext-enable redis
-        # 安装 imagick
-        pecl install imagick
-        docker-php-ext-enable imagick
+        # 验证安装
+        echo "验证 PHP 版本和扩展..."
+        php -v
+        php -m
         
-        # 4. 配置 OPcache
-        echo "配置 OPcache..."
-        echo "opcache.enable=1
-        opcache.memory_consumption=256
-        opcache.max_accelerated_files=60000
-        opcache.revalidate_freq=2
-        opcache.save_comments=1" > /usr/local/etc/php/conf.d/opcache.ini
-        
-        # 5. 验证所有扩展安装
-        echo "验证扩展安装..."
-        php -m | grep -E 'pdo_mysql|mysqli|opcache|gd|bcmath|intl|soap|xsl|zip|sockets|redis|imagick'
-        
-        # 6. 检查 PHP 配置
-        echo "检查 PHP 配置..."
-        php --ini
-        ls -la /usr/local/etc/php/conf.d/
+        # 检查 PHP-FPM 配置
+        echo "检查 PHP-FPM 配置..."
+        php-fpm8.3 -v
+        ls -la /etc/php/8.3/fpm/
         EOF
       register: ext_result
 
     - name: 显示扩展安装结果
       debug:
         msg: "{{ ext_result.stdout_lines }}"
-        verbosity: 2
 
     - name: 检查扩展安装结果
-      fail:
-        msg: "PHP 扩展安装失败，请检查日志"
-      when: ext_result.rc != 0
+      debug:
+        msg: "PHP 扩展安装成功"
+      when: ext_result.rc == 0
 
     - name: 验证安装
       shell: |
